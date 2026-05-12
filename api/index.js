@@ -1925,6 +1925,11 @@ function sendSSE(res, data) {
   res.write(`data: ${msg}\n\n`);
 }
 
+function sendSSEEvent(res, event, data) {
+  const msg = typeof data === "string" ? data : JSON.stringify(data);
+  res.write(`event: ${event}\ndata: ${msg}\n\n`);
+}
+
 // ─── Main Handler ──────────────────────────────────────────────────────────────
 
 module.exports = async (req, res) => {
@@ -1943,14 +1948,43 @@ module.exports = async (req, res) => {
       timestamp: new Date().toISOString(),
       toolCount: TOOLS.length,
       tools: TOOLS.map(t => t.name),
-      endpoint: "/sse"
+      endpoints: { mcp: "/mcp (POST, Streamable HTTP)", sse: "/sse (SSE)" }
     });
     return;
   }
 
   if (req.url?.includes("favicon")) { res.status(404).end(); return; }
 
-  // SSE endpoint
+  // ── Streamable HTTP endpoint (MCP 2025-03-26, preferred for Claude.ai) ──────
+  if (req.url === "/mcp" || req.url?.startsWith("/mcp?")) {
+    if (req.method === "GET") {
+      res.status(200).json({
+        name: SERVER_INFO.name,
+        version: SERVER_INFO.version,
+        protocol: MCP_PROTOCOL_VERSION,
+        endpoint: "POST /mcp",
+        toolCount: TOOLS.length
+      });
+      return;
+    }
+    if (req.method === "POST") {
+      let body = "";
+      req.on("data", chunk => { body += chunk.toString(); });
+      req.on("end", async () => {
+        try {
+          const msg = JSON.parse(body);
+          log("MCP Streamable", { method: msg.method, id: msg.id });
+          const response = await processMessage(msg);
+          res.status(200).setHeader("Content-Type", "application/json").end(JSON.stringify(response));
+        } catch (err) {
+          res.status(400).json(rpc(null, null, { code: -32700, message: "Parse error" }));
+        }
+      });
+      return;
+    }
+  }
+
+  // SSE endpoint (legacy)
   if (req.url === "/sse") {
     res.writeHead(200, {
       "Content-Type": "text/event-stream",
@@ -1963,8 +1997,8 @@ module.exports = async (req, res) => {
 
     if (req.method === "GET") {
       log("SSE connection established");
-      sendSSE(res, notify("notification/initialized", {}));
-      setTimeout(() => sendSSE(res, notify("notification/tools/list_changed", {})), 100);
+      // Send endpoint event so clients know where to POST MCP messages
+      sendSSEEvent(res, "endpoint", "/sse");
 
       const hb = setInterval(() => res.write(": heartbeat\n\n"), 25000);
       req.on("close", () => { log("SSE closed"); clearInterval(hb); });
