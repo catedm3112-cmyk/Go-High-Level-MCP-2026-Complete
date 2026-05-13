@@ -1933,6 +1933,8 @@ function sendSSEEvent(res, event, data) {
 // ─── Main Handler ──────────────────────────────────────────────────────────────
 
 module.exports = async (req, res) => {
+  // Normalize legacy-suffixed paths so /mcp-legacy and /sse-legacy work as rollback
+  if (req.url) req.url = req.url.replace("/mcp-legacy", "/mcp").replace("/sse-legacy", "/sse");
   log(`${req.method} ${req.url}`);
   setCORS(res);
 
