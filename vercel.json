@@ -7,6 +7,7 @@
     }
   ],
   "routes": [
+    { "src": "/mcp-full(.*)", "dest": "/api/mcp-full.js" },
     { "src": "/(.*)", "dest": "/api/index.js" }
   ]
 } 

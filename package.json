@@ -29,7 +29,7 @@
     "start:stdio": "node dist/server.js",
     "start:http": "node dist/main.js",
     "start:legacy": "node dist/http-server.js",
-    "vercel-build": "echo \"build skipped\"",
+    "vercel-build": "tsc",
     "prepublishOnly": "npm run build",
     "test": "jest",
     "test:watch": "jest --watch",
