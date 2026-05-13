@@ -301,6 +301,41 @@ async function handleSse(req, res) {
   }
 }
 
+// ─── Schema sanitizer for ChatGPT ────────────────────────────────────────────
+// ChatGPT's MCP client rejects schemas with:
+//   - `default` keyword (not standard in JSON Schema tool schemas)
+//   - `type: "array"` properties without an `items` sub-schema
+// This sanitizer strips those before sending tools/list to GPT.
+
+function sanitizeSchemaForGPT(schema) {
+  if (!schema || typeof schema !== "object" || Array.isArray(schema)) return schema;
+
+  const result = {};
+  for (const [key, value] of Object.entries(schema)) {
+    if (key === "default") continue; // GPT rejects `default`
+
+    if (key === "properties" && value && typeof value === "object") {
+      result.properties = {};
+      for (const [prop, propSchema] of Object.entries(value)) {
+        result.properties[prop] = sanitizeSchemaForGPT(propSchema);
+      }
+    } else if (key === "items") {
+      result.items = sanitizeSchemaForGPT(value);
+    } else if ((key === "anyOf" || key === "oneOf" || key === "allOf") && Array.isArray(value)) {
+      result[key] = value.map(s => sanitizeSchemaForGPT(s));
+    } else {
+      result[key] = value;
+    }
+  }
+
+  // GPT requires `items` for any array-typed property
+  if (result.type === "array" && !result.items) {
+    result.items = {};
+  }
+
+  return result;
+}
+
 // /mcp-gpt — ChatGPT-compatible endpoint (curated tool subset, ≤128 tools)
 async function handleMcpGpt(req, res) {
   if (req.method === "GET") {
@@ -346,7 +381,7 @@ async function handleMcpGpt(req, res) {
             tools: filtered.map(t => ({
               name: t.name,
               description: t.description || "",
-              inputSchema: t.inputSchema || { type: "object", properties: {} },
+              inputSchema: sanitizeSchemaForGPT(t.inputSchema) || { type: "object", properties: {} },
             })),
           });
         } else {
