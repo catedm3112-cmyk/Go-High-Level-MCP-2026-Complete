@@ -32,10 +32,6 @@ const GPT_TOOL_ALLOWLIST = new Set([
   "get_calendar_events", "get_free_slots",
   "create_appointment", "get_appointment", "update_appointment", "delete_appointment",
   "get_calendar_groups",
-  // Invoices / Payments
-  "list_invoices", "get_invoice", "create_invoice", "send_invoice",
-  "list_orders", "get_order_by_id",
-  "list_transactions", "get_transaction_by_id", "list_subscriptions",
   // Products / Store
   "ghl_list_products", "ghl_get_product", "ghl_create_product", "ghl_update_product", "ghl_delete_product",
   "ghl_list_prices", "ghl_create_price",
