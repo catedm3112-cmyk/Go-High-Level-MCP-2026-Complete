@@ -37,12 +37,17 @@ const GPT_TOOL_ALLOWLIST = new Set([
   "create_appointment", "get_appointment", "update_appointment", "delete_appointment",
   "get_calendar_groups",
 
-  // Invoices / Payments (12)
-  "list_invoices", "get_invoice", "create_invoice", "send_invoice",
-  "list_orders", "get_order_by_id",
-  "list_transactions", "get_transaction_by_id",
-  "list_subscriptions", "get_subscription_by_id",
-  "create_estimate", "list_estimates",
+  // Voice AI (4)
+  "list_voice_ai_agents", "create_voice_ai_agent", "get_voice_ai_agent", "update_voice_ai_agent",
+
+  // Funnels (3)
+  "get_funnels", "get_funnel", "get_funnel_pages",
+
+  // Custom Fields CRUD (3) — extends get_location_custom_fields already in Location/Users
+  "create_location_custom_field", "update_location_custom_field", "delete_location_custom_field",
+
+  // Phone Numbers (2)
+  "get_phone_numbers", "ghl_search_available_numbers",
 
   // Products / Store (10)
   "ghl_list_products", "ghl_get_product", "ghl_create_product", "ghl_update_product", "ghl_delete_product",
@@ -62,8 +67,11 @@ const GPT_TOOL_ALLOWLIST = new Set([
   "get_location_custom_values", "create_location_custom_value", "update_location_custom_value",
   "get_users", "get_user", "search_users", "create_user", "update_user",
 
-  // Blogs (4)
-  "get_blog_sites", "get_blog_posts", "create_blog_post", "update_blog_post",
+  // Smart Lists (2)
+  "get_smart_lists", "get_smart_list_contacts",
+
+  // Snippets (2)
+  "get_snippets", "create_snippet",
 
   // Social Media (6)
   "get_social_accounts", "create_social_post", "update_social_post",
