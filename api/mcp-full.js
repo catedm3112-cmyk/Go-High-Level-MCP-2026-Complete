@@ -6,62 +6,6 @@
 const MCP_PROTOCOL_VERSION = "2024-11-05";
 const SERVER_INFO = { name: "ghl-mcp-server", version: "2.1.0" };
 
-// ─── GPT-compatible tool allowlist ────────────────────────────────────────────
-// ChatGPT enforces a hard cap of ~128 tools per MCP server. This curated set
-// (114 tools) covers the most commonly used GHL workflows and stays under that
-// limit. The /mcp-gpt endpoint serves only these tools; /mcp is unchanged and
-// still serves all 552 tools for Claude and other uncapped clients.
-
-const GPT_TOOL_ALLOWLIST = new Set([
-  // Contacts
-  "search_contacts", "get_contact", "create_contact", "update_contact", "delete_contact",
-  "upsert_contact", "add_contact_tags", "remove_contact_tags",
-  "get_contact_notes", "create_contact_note", "update_contact_note",
-  "get_contact_tasks", "create_contact_task", "update_contact_task",
-  "get_contact_appointments",
-  "add_contact_to_workflow", "remove_contact_from_workflow",
-  "add_contact_to_campaign", "remove_contact_from_all_campaigns",
-  // Conversations / Messaging
-  "search_conversations", "get_conversation", "create_conversation",
-  "get_messages", "send_sms", "send_email", "update_conversation", "get_recent_messages",
-  // Opportunities / Pipeline
-  "search_opportunities", "get_opportunity", "create_opportunity", "update_opportunity",
-  "delete_opportunity", "get_pipelines", "update_opportunity_status", "upsert_opportunity",
-  // Calendars / Appointments
-  "get_calendars", "get_calendar", "create_calendar", "update_calendar", "delete_calendar",
-  "get_calendar_events", "get_free_slots",
-  "create_appointment", "get_appointment", "update_appointment", "delete_appointment",
-  "get_calendar_groups",
-  // Products / Store
-  "ghl_list_products", "ghl_get_product", "ghl_create_product", "ghl_update_product", "ghl_delete_product",
-  "ghl_list_prices", "ghl_create_price",
-  "list_coupons", "create_coupon", "update_coupon",
-  // Workflows
-  "ghl_get_workflows", "ghl_get_workflow", "ghl_trigger_workflow", "ghl_list_workflows",
-  // Campaigns
-  "get_campaigns", "get_campaign", "start_campaign", "pause_campaign", "resume_campaign",
-  // Location / Users
-  "get_location", "update_location",
-  "get_location_custom_fields", "get_location_tags", "create_location_tag",
-  "get_location_custom_values",
-  "get_users", "get_user", "search_users", "create_user",
-  // Blogs
-  "get_blog_sites", "get_blog_posts", "create_blog_post", "update_blog_post",
-  // Social Media
-  "get_social_accounts", "create_social_post", "update_social_post",
-  "get_social_post", "get_social_media_statistics",
-  // Companies / Businesses
-  "get_companies", "get_company", "create_company", "update_company",
-  // Email / Templates
-  "get_email_templates", "create_email_template", "get_email_campaigns", "get_sms_templates",
-  // Forms / Surveys
-  "get_forms", "get_form_submissions", "ghl_get_surveys",
-  // Reporting
-  "get_pipeline_reports", "get_dashboard_stats", "get_email_reports", "get_funnel_reports",
-  // Misc high-value
-  "get_media_files", "get_webhooks", "create_webhook", "get_snapshots", "get_location_templates",
-]);
-
 // ─── Registry (lazy singleton) ────────────────────────────────────────────────
 
 let _registry = null;
@@ -187,8 +131,9 @@ async function handleHealth(req, res) {
       timestamp: new Date().toISOString(),
       toolCount: registry.getToolCount(),
       endpoints: {
-        mcp:  "/mcp (POST, Streamable HTTP)",
-        sse:  "/sse (SSE)",
+        mcp:     "/mcp (POST, Streamable HTTP — all tools, Claude)",
+        mcp_gpt: "/mcp-gpt?page=N (POST, ChatGPT — 128 tools per page)",
+        sse:     "/sse (SSE)",
       },
     });
   } catch (err) {
@@ -332,20 +277,41 @@ function sanitizeSchemaForGPT(schema) {
   return result;
 }
 
-// /mcp-gpt — ChatGPT-compatible endpoint (curated tool subset, ≤128 tools)
+// /mcp-gpt — ChatGPT-compatible endpoint, paginated (128 tools per page)
+//
+// ChatGPT enforces a hard cap of ~128 tools per MCP server connection.
+// To access all 552 GHL tools, add each page as a separate connector in ChatGPT:
+//   /mcp-gpt         → tools 1–128
+//   /mcp-gpt?page=2  → tools 129–256
+//   /mcp-gpt?page=3  → tools 257–384
+//   /mcp-gpt?page=4  → tools 385–512
+//   /mcp-gpt?page=5  → tools 513–552
+//
+// Tool calls are routed to the full registry regardless of which page is used.
+
+const GPT_PAGE_SIZE = 128;
+
 async function handleMcpGpt(req, res) {
+  const urlObj = new URL(req.url, "http://localhost");
+  const page = Math.max(1, parseInt(urlObj.searchParams.get("page") || "1", 10));
+  const offset = (page - 1) * GPT_PAGE_SIZE;
+
   if (req.method === "GET") {
     try {
       const registry = await getRegistry();
       const allDefs = registry.getAllToolDefinitions([]);
-      const filtered = allDefs.filter(t => GPT_TOOL_ALLOWLIST.has(t.name));
+      const totalPages = Math.ceil(allDefs.length / GPT_PAGE_SIZE);
+      const pageDefs = allDefs.slice(offset, offset + GPT_PAGE_SIZE);
       res.status(200).json({
         name: SERVER_INFO.name,
         version: SERVER_INFO.version,
         protocol: MCP_PROTOCOL_VERSION,
-        endpoint: "POST /mcp-gpt",
-        toolCount: filtered.length,
-        note: "ChatGPT-compatible endpoint — curated subset of high-value tools",
+        endpoint: `POST /mcp-gpt?page=${page}`,
+        page,
+        totalPages,
+        toolsOnPage: pageDefs.length,
+        totalTools: allDefs.length,
+        note: `ChatGPT-compatible — add all ${totalPages} pages as separate connectors to access all ${allDefs.length} tools`,
       });
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -372,16 +338,16 @@ async function handleMcpGpt(req, res) {
         let response;
         if (msg.method === "tools/list") {
           const allDefs = registry.getAllToolDefinitions([]);
-          const filtered = allDefs.filter(t => GPT_TOOL_ALLOWLIST.has(t.name));
+          const pageDefs = allDefs.slice(offset, offset + GPT_PAGE_SIZE);
           response = rpc(msg.id, {
-            tools: filtered.map(t => ({
+            tools: pageDefs.map(t => ({
               name: t.name,
               description: t.description || "",
               inputSchema: sanitizeSchemaForGPT(t.inputSchema) || { type: "object", properties: {} },
             })),
           });
         } else {
-          // initialize, tools/call, ping — delegate to the shared processor unchanged
+          // initialize, tools/call, ping — full registry access regardless of page
           response = await processMessage(msg, registry);
         }
         res.status(200).setHeader("Content-Type", "application/json").end(JSON.stringify(response));
