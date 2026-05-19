@@ -71,6 +71,8 @@ export interface WorkflowBuilderConfig {
   userId: string;
   companyId?: string;
   envFilePath?: string;
+  /** Fall back to public GHL API using only GHL_API_KEY (no Firebase/JWT needed) */
+  publicApiMode?: boolean;
 }
 
 // ─── Client ─────────────────────────────────────────────────
@@ -82,6 +84,7 @@ export class WorkflowBuilderClient {
   private tokenExpiry: number = 0;
 
   private static readonly BASE_URL = 'https://backend.leadconnectorhq.com/workflow';
+  private static readonly PUBLIC_BASE_URL = 'https://services.leadconnectorhq.com';
   private static readonly FIREBASE_TOKEN_URL = 'https://securetoken.googleapis.com/v1/token';
   private static readonly JWT_REFRESH_URL = 'https://services.leadconnectorhq.com/auth/refresh';
   private static readonly TOKEN_TTL_MS = 55 * 60 * 1000; // 55 minutes (tokens last 60)
@@ -129,11 +132,18 @@ export class WorkflowBuilderClient {
       envFilePath: skillEnvPath,
     };
 
-    // v2 JWT refresh is preferred; fall back to Firebase
+    // v2 JWT refresh is preferred; fall back to Firebase; last resort: public API key mode
     if (!config.refreshToken && (!config.firebaseApiKey || !config.firebaseRefreshToken)) {
-      throw new Error(
-        'Workflow builder requires GHL_REFRESH_TOKEN (v2 JWT) or GHL_FIREBASE_API_KEY + GHL_FIREBASE_REFRESH_TOKEN. ' +
-        `Checked: ${skillEnvPath} and process.env`
+      if (!config.apiKey) {
+        throw new Error(
+          'Workflow tools require GHL_API_KEY, GHL_REFRESH_TOKEN (v2 JWT), or ' +
+          'GHL_FIREBASE_API_KEY + GHL_FIREBASE_REFRESH_TOKEN. ' +
+          `Checked: ${skillEnvPath} and process.env`
+        );
+      }
+      config.publicApiMode = true;
+      process.stderr.write(
+        '[WorkflowBuilder] No Firebase/JWT creds found — using public GHL API mode (GHL_API_KEY)\n'
       );
     }
 
@@ -146,6 +156,15 @@ export class WorkflowBuilderClient {
    * Get authenticated headers. Uses v2 JWT if available, falls back to Firebase.
    */
   private async getHeaders(): Promise<Record<string, string>> {
+    // Public API key mode — no Firebase/JWT required
+    if (this.config.publicApiMode) {
+      return {
+        'Authorization': `Bearer ${this.config.apiKey}`,
+        'Content-Type': 'application/json',
+        'Version': '2021-07-28',
+      };
+    }
+
     // Prefer v2 JWT refresh flow
     if (this.config.refreshToken) {
       if (!this.cachedJwt || Date.now() >= this.tokenExpiry) {
@@ -297,12 +316,54 @@ export class WorkflowBuilderClient {
     return { status: res.status, data };
   }
 
+  /**
+   * HTTP helper for the public GHL API (services.leadconnectorhq.com).
+   * Used when no Firebase/JWT credentials are available.
+   */
+  private async publicRequest<T = unknown>(
+    method: string,
+    path: string,
+    body?: unknown
+  ): Promise<{ status: number; data: T }> {
+    const headers = await this.getHeaders();
+    const url = `${WorkflowBuilderClient.PUBLIC_BASE_URL}${path}`;
+
+    const opts: RequestInit = { method, headers };
+    if (body) opts.body = JSON.stringify(body);
+
+    const res = await fetch(url, opts);
+    const text = await res.text();
+
+    let data: T;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = text as unknown as T;
+    }
+
+    if (!res.ok) {
+      throw new Error(
+        `GHL API error ${res.status} ${method} ${path}: ${typeof data === 'string' ? data : JSON.stringify(data)}`
+      );
+    }
+
+    return { status: res.status, data };
+  }
+
   // ─── API Methods ────────────────────────────────────────
 
   /**
    * Create an empty workflow.
    */
   async createWorkflow(name: string): Promise<{ id: string }> {
+    if (this.config.publicApiMode) {
+      const { data } = await this.publicRequest<any>(
+        'POST',
+        `/workflows/`,
+        { name, locationId: this.config.locationId }
+      );
+      return { id: data._id || data.id || data.workflowId };
+    }
     const { data } = await this.request<{ id: string }>(
       'POST',
       `/${this.config.locationId}`,
@@ -315,6 +376,16 @@ export class WorkflowBuilderClient {
    * Get a workflow with full workflowData (actions, triggers, etc.)
    */
   async getWorkflow(workflowId: string): Promise<WorkflowFull> {
+    if (this.config.publicApiMode) {
+      const locId = encodeURIComponent(this.config.locationId);
+      const { data } = await this.publicRequest<any>(
+        'GET',
+        `/workflows/${workflowId}?locationId=${locId}`
+      );
+      // Public API may return the workflow directly or nested under a key
+      const wf: WorkflowFull = data.workflow || data;
+      return wf;
+    }
     const { data } = await this.request<WorkflowFull>(
       'GET',
       `/${this.config.locationId}/${workflowId}`
@@ -331,6 +402,23 @@ export class WorkflowBuilderClient {
     sortBy?: string;
     sortOrder?: 'asc' | 'desc';
   }): Promise<{ rows: WorkflowListItem[]; total: number }> {
+    if (this.config.publicApiMode) {
+      const locId = encodeURIComponent(this.config.locationId);
+      const { data } = await this.publicRequest<any>(
+        'GET',
+        `/workflows/?locationId=${locId}`
+      );
+      const rows: WorkflowListItem[] = (data.workflows || data.rows || []).map((w: any) => ({
+        _id: w._id || w.id,
+        name: w.name,
+        status: w.status,
+        version: w.version,
+        createdAt: w.dateAdded || w.createdAt,
+        updatedAt: w.dateUpdated || w.updatedAt,
+      }));
+      return { rows, total: data.count ?? rows.length };
+    }
+
     const limit = opts?.limit ?? 50;
     const offset = opts?.offset ?? 0;
     const sortBy = opts?.sortBy ?? 'name';
@@ -359,6 +447,19 @@ export class WorkflowBuilderClient {
       deletedSteps?: string[];
     }
   ): Promise<WorkflowFull> {
+    if (this.config.publicApiMode) {
+      const body: Record<string, unknown> = {
+        locationId: this.config.locationId,
+      };
+      if (update.name !== undefined) body.name = update.name;
+      if (update.status !== undefined) body.status = update.status;
+      // Note: full action/trigger updates require internal API (Firebase/JWT auth)
+      if (update.actions !== undefined) body.actions = update.actions;
+      if (update.triggers !== undefined) body.triggers = update.triggers;
+      await this.publicRequest('PUT', `/workflows/${workflowId}`, body);
+      return this.getWorkflow(workflowId);
+    }
+
     // Get current state for version
     const current = await this.getWorkflow(workflowId);
 
@@ -419,6 +520,11 @@ export class WorkflowBuilderClient {
    * Delete a workflow.
    */
   async deleteWorkflow(workflowId: string): Promise<void> {
+    if (this.config.publicApiMode) {
+      const locId = encodeURIComponent(this.config.locationId);
+      await this.publicRequest('DELETE', `/workflows/${workflowId}?locationId=${locId}`);
+      return;
+    }
     await this.request('DELETE', `/${this.config.locationId}/${workflowId}`);
   }
 
@@ -426,6 +532,12 @@ export class WorkflowBuilderClient {
    * Publish a workflow (set status to published).
    */
   async publishWorkflow(workflowId: string): Promise<WorkflowFull> {
+    if (this.config.publicApiMode) {
+      await this.publicRequest('PUT', `/workflows/${workflowId}/publish`, {
+        locationId: this.config.locationId,
+      });
+      return this.getWorkflow(workflowId);
+    }
     return this.updateWorkflow(workflowId, { status: 'published' });
   }
 
@@ -433,6 +545,19 @@ export class WorkflowBuilderClient {
    * Clone a workflow: GET → create new → PUT with same actions/triggers.
    */
   async cloneWorkflow(workflowId: string, newName?: string): Promise<WorkflowFull> {
+    if (this.config.publicApiMode) {
+      const body: Record<string, unknown> = { locationId: this.config.locationId };
+      if (newName) body.name = newName;
+      const { data } = await this.publicRequest<any>(
+        'POST',
+        `/workflows/${workflowId}/clone`,
+        body
+      );
+      const clonedId = data._id || data.id || data.workflowId;
+      if (clonedId) return this.getWorkflow(clonedId);
+      return data as WorkflowFull;
+    }
+
     const source = await this.getWorkflow(workflowId);
     const name = newName || `${source.name} (copy)`;
 

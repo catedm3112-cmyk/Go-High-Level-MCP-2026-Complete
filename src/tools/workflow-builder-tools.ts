@@ -295,8 +295,9 @@ export class WorkflowBuilderTools {
   async executeWorkflowBuilderTool(name: string, params: Record<string, unknown>): Promise<ToolResult> {
     if (!this.client) {
       return error(
-        `Workflow builder not initialized: ${this.initError || 'Unknown error'}. ` +
-        'Ensure GHL_FIREBASE_API_KEY and GHL_FIREBASE_REFRESH_TOKEN are set.'
+        `Workflow tools not initialized: ${this.initError || 'Unknown error'}. ` +
+        'Ensure GHL_API_KEY is set (required), or optionally GHL_REFRESH_TOKEN (v2 JWT) ' +
+        'or GHL_FIREBASE_API_KEY + GHL_FIREBASE_REFRESH_TOKEN for full internal API access.'
       );
     }
 
