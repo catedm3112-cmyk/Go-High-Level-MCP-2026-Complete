@@ -303,7 +303,7 @@ export class WorkflowTools {
     const body: Record<string, unknown> = { status: params.status };
     const locationId = this.locationId(params);
     if (locationId) body.locationId = locationId;
-    return (this.apiClient as any).makeRequest('PATCH', `/workflows/${params.workflowId}`, body);
+    return (this.apiClient as any).makeRequest('PUT', `/workflows/${params.workflowId}`, body);
   }
 
   private async deleteWorkflow(params: any): Promise<any> {
