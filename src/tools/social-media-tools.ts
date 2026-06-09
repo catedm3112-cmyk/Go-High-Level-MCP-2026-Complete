@@ -454,20 +454,13 @@ export class SocialMediaTools {
         inputSchema: {
           type: 'object',
           properties: {
-            accountIds: {
+            profileIds: {
               type: 'array',
               items: { type: 'string' },
-              description: 'Array of social media account IDs to get statistics for'
-            },
-            fromDate: { type: 'string', description: 'Start date (ISO format)' },
-            toDate: { type: 'string', description: 'End date (ISO format)' },
-            postType: {
-              type: 'string',
-              enum: ['post', 'story', 'reel'],
-              description: 'Type of post to get statistics for'
+              description: 'Array of social account profileIds (the `profileId` field returned by get_social_accounts) to get statistics for'
             }
           },
-          required: ['fromDate', 'toDate']
+          required: ['profileIds']
         },
         _meta: {
           labels: {
@@ -760,15 +753,8 @@ export class SocialMediaTools {
     };
   }
 
-  private async getSocialMediaStatistics(params: { accountIds?: string[]; fromDate: string; toDate: string; postType?: string }) {
-    const body: Record<string, unknown> = {
-      fromDate: params.fromDate,
-      toDate: params.toDate
-    };
-    if (params.accountIds) body.accountIds = params.accountIds;
-    if (params.postType) body.postType = params.postType;
-
-    const response = await this.ghlClient.makeRequest('POST', '/social-media-posting/statistics', body as Record<string, unknown>);
+  private async getSocialMediaStatistics(params: { profileIds: string[] }) {
+    const response = await this.ghlClient.getSocialMediaStatistics(params.profileIds);
 
     return {
       success: true,

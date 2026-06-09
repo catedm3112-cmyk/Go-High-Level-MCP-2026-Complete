@@ -2982,11 +2982,12 @@ export class GHLApiClient {
   async searchSocialPosts(searchData: GHLSearchPostsRequest): Promise<GHLApiResponse<GHLSearchPostsResponse>> {
     try {
       const locationId = this.config.locationId;
-      const response: AxiosResponse<GHLSearchPostsResponse> = await this.axiosInstance.post(
+      const response: AxiosResponse<any> = await this.axiosInstance.post(
         `/social-media-posting/${locationId}/posts/list`,
         searchData
       );
-      return this.wrapResponse(response.data);
+      // GHL nests the payload under `results` — unwrap to { posts, count }.
+      return this.wrapResponse((response.data?.results ?? response.data) as GHLSearchPostsResponse);
     } catch (error) {
       throw error;
     }
@@ -3014,10 +3015,11 @@ export class GHLApiClient {
   async getSocialPost(postId: string): Promise<GHLApiResponse<GHLGetPostResponse>> {
     try {
       const locationId = this.config.locationId;
-      const response: AxiosResponse<GHLGetPostResponse> = await this.axiosInstance.get(
+      const response: AxiosResponse<any> = await this.axiosInstance.get(
         `/social-media-posting/${locationId}/posts/${postId}`
       );
-      return this.wrapResponse(response.data);
+      // GHL nests the payload under `results` — unwrap to { post }.
+      return this.wrapResponse((response.data?.results ?? response.data) as GHLGetPostResponse);
     } catch (error) {
       throw error;
     }
@@ -3078,10 +3080,31 @@ export class GHLApiClient {
   async getSocialAccounts(): Promise<GHLApiResponse<GHLGetAccountsResponse>> {
     try {
       const locationId = this.config.locationId;
-      const response: AxiosResponse<GHLGetAccountsResponse> = await this.axiosInstance.get(
+      const response: AxiosResponse<any> = await this.axiosInstance.get(
         `/social-media-posting/${locationId}/accounts`
       );
-      return this.wrapResponse(response.data);
+      // GHL nests the social payload under `results` — unwrap so callers get { accounts, groups }.
+      return this.wrapResponse((response.data?.results ?? response.data) as GHLGetAccountsResponse);
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  /**
+   * Get Social Media Statistics
+   * GHL contract: POST /social-media-posting/statistics?locationId={loc}
+   * body { profileIds: [...] } — NOT accountIds, and it rejects fromDate/toDate.
+   * profileIds are the `profileId` field from getSocialAccounts.
+   */
+  async getSocialMediaStatistics(profileIds: string[]): Promise<GHLApiResponse<any>> {
+    try {
+      const locationId = this.config.locationId;
+      const response: AxiosResponse<any> = await this.axiosInstance.post(
+        `/social-media-posting/statistics`,
+        { profileIds },
+        { params: { locationId } }
+      );
+      return this.wrapResponse(response.data?.results ?? response.data);
     } catch (error) {
       throw error;
     }
