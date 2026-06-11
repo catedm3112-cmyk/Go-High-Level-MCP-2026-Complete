@@ -20,7 +20,8 @@ import { OpportunityTools } from './tools/opportunity-tools.js';
 import { CalendarTools } from './tools/calendar-tools.js';
 import { EmailTools } from './tools/email-tools.js';
 import { LocationTools } from './tools/location-tools.js';
-import { EmailISVTools } from './tools/email-isv-tools.js';
+// REMOVED (dead/irrelevant): Email ISV — confirmed dead 404 endpoints (list domains, providers, stats)
+// import { EmailISVTools } from './tools/email-isv-tools.js';
 import { SocialMediaTools } from './tools/social-media-tools.js';
 import { MediaTools } from './tools/media-tools.js';
 import { ObjectTools } from './tools/object-tools.js';
@@ -30,11 +31,13 @@ import { WorkflowTools } from './tools/workflow-tools.js';
 import { SurveyTools } from './tools/survey-tools.js';
 import { StoreTools } from './tools/store-tools.js';
 import { ProductsTools } from './tools/products-tools.js';
-import { AffiliatesTools } from './tools/affiliates-tools.js';
+// REMOVED (dead/irrelevant): Affiliate/payout/referral/commission tools
+// import { AffiliatesTools } from './tools/affiliates-tools.js';
 import { BusinessesTools } from './tools/businesses-tools.js';
 import { CampaignsTools } from './tools/campaigns-tools.js';
 import { CompaniesTools } from './tools/companies-tools.js';
-import { CoursesTools } from './tools/courses-tools.js';
+// REMOVED (dead/irrelevant): Course/membership tools (course, enrollment, student, lesson, instructor)
+// import { CoursesTools } from './tools/courses-tools.js';
 import { FormsTools } from './tools/forms-tools.js';
 import { FunnelsTools } from './tools/funnels-tools.js';
 import { InvoicesTools } from './tools/invoices-tools.js';
@@ -43,7 +46,8 @@ import { PaymentsTools } from './tools/payments-tools.js';
 import { PhoneTools } from './tools/phone-tools.js';
 import { ReportingTools } from './tools/reporting-tools.js';
 import { ReputationTools } from './tools/reputation-tools.js';
-import { SaasTools } from './tools/saas-tools.js';
+// REMOVED (dead/irrelevant): SaaS/agency tools
+// import { SaasTools } from './tools/saas-tools.js';
 import { SmartListsTools } from './tools/smartlists-tools.js';
 import { SnapshotsTools } from './tools/snapshots-tools.js';
 import { TemplatesTools } from './tools/templates-tools.js';
@@ -160,7 +164,7 @@ export class ToolRegistry {
     const calendarTools = new CalendarTools(ghl);
     const emailTools = new EmailTools(ghl);
     const locationTools = new LocationTools(ghl);
-    const emailISVTools = new EmailISVTools(ghl);
+    // REMOVED (dead/irrelevant): const emailISVTools = new EmailISVTools(ghl);
     const socialMediaTools = new SocialMediaTools(ghl);
     const mediaTools = new MediaTools(ghl);
     const objectTools = new ObjectTools(ghl);
@@ -174,11 +178,11 @@ export class ToolRegistry {
     const productsTools = new ProductsTools(ghl);
 
     // Dynamic modules (use getToolDefinitions + handleToolCall)
-    const affiliatesTools = new AffiliatesTools(ghl);
+    // REMOVED (dead/irrelevant): const affiliatesTools = new AffiliatesTools(ghl);
     const businessesTools = new BusinessesTools(ghl);
     const campaignsTools = new CampaignsTools(ghl);
     const companiesTools = new CompaniesTools(ghl);
-    const coursesTools = new CoursesTools(ghl);
+    // REMOVED (dead/irrelevant): const coursesTools = new CoursesTools(ghl);
     const formsTools = new FormsTools(ghl);
     const funnelsTools = new FunnelsTools(ghl);
     const invoicesTools = new InvoicesTools(ghl);
@@ -187,7 +191,7 @@ export class ToolRegistry {
     const phoneTools = new PhoneTools(ghl);
     const reportingTools = new ReportingTools(ghl);
     const reputationTools = new ReputationTools(ghl);
-    const saasTools = new SaasTools(ghl);
+    // REMOVED (dead/irrelevant): const saasTools = new SaasTools(ghl);
     const smartListsTools = new SmartListsTools(ghl);
     const snapshotsTools = new SnapshotsTools(ghl);
     const templatesTools = new TemplatesTools(ghl);
@@ -212,7 +216,7 @@ export class ToolRegistry {
     this.addModule('calendar', calendarTools, 'getToolDefinitions', 'executeTool');
     this.addModule('email', emailTools, 'getToolDefinitions', 'executeTool');
     this.addModule('location', locationTools, 'getToolDefinitions', 'executeTool');
-    this.addModule('emailISV', emailISVTools, 'getToolDefinitions', 'executeTool');
+    // REMOVED (dead/irrelevant): this.addModule('emailISV', emailISVTools, 'getToolDefinitions', 'executeTool');
     this.addModule('socialMedia', socialMediaTools, 'getTools', 'executeTool');
     this.addModule('media', mediaTools, 'getToolDefinitions', 'executeTool');
     this.addModule('objects', objectTools, 'getToolDefinitions', 'executeTool');
@@ -226,11 +230,11 @@ export class ToolRegistry {
     this.addModule('products', productsTools, 'getTools', 'executeProductsTool');
 
     // Dynamic modules (handleToolCall pattern)
-    this.addModule('affiliates', affiliatesTools, 'getToolDefinitions', 'handleToolCall');
+    // REMOVED (dead/irrelevant): this.addModule('affiliates', affiliatesTools, 'getToolDefinitions', 'handleToolCall');
     this.addModule('businesses', businessesTools, 'getToolDefinitions', 'handleToolCall');
     this.addModule('campaigns', campaignsTools, 'getToolDefinitions', 'handleToolCall');
     this.addModule('companies', companiesTools, 'getToolDefinitions', 'handleToolCall');
-    this.addModule('courses', coursesTools, 'getToolDefinitions', 'handleToolCall');
+    // REMOVED (dead/irrelevant): this.addModule('courses', coursesTools, 'getToolDefinitions', 'handleToolCall');
     this.addModule('forms', formsTools, 'getToolDefinitions', 'handleToolCall');
     this.addModule('funnels', funnelsTools, 'getToolDefinitions', 'handleToolCall');
     this.addModule('invoices', invoicesTools, 'getTools', 'handleToolCall');
@@ -239,7 +243,7 @@ export class ToolRegistry {
     this.addModule('phone', phoneTools, 'getToolDefinitions', 'handleToolCall');
     this.addModule('reporting', reportingTools, 'getToolDefinitions', 'handleToolCall');
     this.addModule('reputation', reputationTools, 'getToolDefinitions', 'handleToolCall');
-    this.addModule('saas', saasTools, 'getToolDefinitions', 'handleToolCall');
+    // REMOVED (dead/irrelevant): this.addModule('saas', saasTools, 'getToolDefinitions', 'handleToolCall');
     this.addModule('smartLists', smartListsTools, 'getToolDefinitions', 'handleToolCall');
     this.addModule('snapshots', snapshotsTools, 'getToolDefinitions', 'handleToolCall');
     this.addModule('templates', templatesTools, 'getToolDefinitions', 'handleToolCall');

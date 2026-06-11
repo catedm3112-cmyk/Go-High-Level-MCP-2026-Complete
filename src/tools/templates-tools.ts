@@ -230,66 +230,7 @@ export class TemplatesTools {
         }
       },
 
-      // WhatsApp Templates
-      {
-        name: 'get_whatsapp_templates',
-        description: 'Get WhatsApp message templates (must be pre-approved)',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            locationId: { type: 'string', description: 'Location ID' },
-            status: { type: 'string', enum: ['approved', 'pending', 'rejected', 'all'], description: 'Template status' }
-          }
-        },
-        _meta: {
-          labels: {
-            category: "templates",
-            access: "read",
-            complexity: "simple"
-          }
-        }
-      },
-      {
-        name: 'create_whatsapp_template',
-        description: 'Create a WhatsApp template (submits for approval)',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            locationId: { type: 'string', description: 'Location ID' },
-            name: { type: 'string', description: 'Template name' },
-            category: { type: 'string', enum: ['marketing', 'utility', 'authentication'], description: 'Template category' },
-            language: { type: 'string', description: 'Language code (e.g., en_US)' },
-            components: { type: 'array', description: 'Template components (header, body, footer, buttons)' },
-          },
-          required: ['name', 'category', 'language', 'components']
-        },
-        _meta: {
-          labels: {
-            category: "templates",
-            access: "write",
-            complexity: "simple"
-          }
-        }
-      },
-      {
-        name: 'delete_whatsapp_template',
-        description: 'Delete a WhatsApp template',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            templateId: { type: 'string', description: 'Template ID' },
-            locationId: { type: 'string', description: 'Location ID' },
-          },
-          required: ['templateId']
-        },
-        _meta: {
-          labels: {
-            category: "templates",
-            access: "delete",
-            complexity: "simple"
-          }
-        }
-      },
+      // WhatsApp Templates — REMOVED (dead/irrelevant): get/create/delete_whatsapp_template
 
       // Snippet/Canned Response Templates
       {
@@ -445,25 +386,7 @@ export class TemplatesTools {
         return this.ghlClient.makeRequest('DELETE', `/templates/social/${args.templateId}?locationId=${locationId}`);
       }
 
-      // WhatsApp Templates
-      case 'get_whatsapp_templates': {
-        const params = new URLSearchParams();
-        params.append('locationId', locationId);
-        if (args.status) params.append('status', String(args.status));
-        return this.ghlClient.makeRequest('GET', `/templates/whatsapp?${params.toString()}`);
-      }
-      case 'create_whatsapp_template': {
-        return this.ghlClient.makeRequest('POST', `/templates/whatsapp`, {
-          locationId,
-          name: args.name,
-          category: args.category,
-          language: args.language,
-          components: args.components
-        });
-      }
-      case 'delete_whatsapp_template': {
-        return this.ghlClient.makeRequest('DELETE', `/templates/whatsapp/${args.templateId}?locationId=${locationId}`);
-      }
+      // WhatsApp Templates — REMOVED (dead/irrelevant): get/create/delete_whatsapp_template handlers
 
       // Snippets
       case 'get_snippets': {
