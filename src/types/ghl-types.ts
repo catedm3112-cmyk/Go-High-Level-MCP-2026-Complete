@@ -440,6 +440,18 @@ export interface MCPUpdateContactParams {
   email?: string;
   phone?: string;
   tags?: string[];
+  customFields?: MCPContactCustomFieldInput[];
+}
+
+export interface MCPContactCustomFieldInput {
+  id: string;
+  key?: string;
+  value: string | string[] | object;
+}
+
+export interface MCPUpdateContactCustomFieldsParams {
+  contactId: string;
+  customFields: MCPContactCustomFieldInput[];
 }
 
 export interface MCPAddContactTagsParams {

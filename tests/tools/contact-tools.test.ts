@@ -19,7 +19,7 @@ describe('ContactTools', () => {
   describe('getToolDefinitions', () => {
     it('should return 31 contact tool definitions', () => {
       const tools = contactTools.getToolDefinitions();
-      expect(tools).toHaveLength(31);
+      expect(tools).toHaveLength(32);
       
       const toolNames = tools.map(tool => tool.name);
       expect(toolNames).toContain('create_contact');
@@ -29,6 +29,13 @@ describe('ContactTools', () => {
       expect(toolNames).toContain('delete_contact');
       expect(toolNames).toContain('add_contact_tags');
       expect(toolNames).toContain('remove_contact_tags');
+      expect(toolNames).toContain('update_contact_custom_fields');
+    });
+
+    it('update_contact_custom_fields requires contactId and customFields', () => {
+      const tool = contactTools.getToolDefinitions().find(t => t.name === 'update_contact_custom_fields');
+      expect(tool).toBeDefined();
+      expect(tool!.inputSchema.required).toEqual(['contactId', 'customFields']);
     });
 
     it('should have proper schema definitions for all tools', () => {
@@ -54,6 +61,39 @@ describe('ContactTools', () => {
 
       expect(createSpy).toHaveBeenCalledWith({ email: 'test@example.com' });
       expect(getSpy).toHaveBeenCalledWith('contact_123');
+    });
+
+    it('maps { id, value } to field_value and verifies the write for update_contact_custom_fields', async () => {
+      const putSpy = jest.spyOn(mockGhlClient as any, 'updateContact');
+      jest.spyOn(mockGhlClient as any, 'getContact').mockResolvedValue({
+        success: true,
+        data: { id: 'contact_123', customFields: [{ id: 'fld_1', value: '$210K \u2013 $260K' }] }
+      } as any);
+
+      const result: any = await contactTools.executeTool('update_contact_custom_fields', {
+        contactId: 'contact_123',
+        customFields: [{ id: 'fld_1', value: '$210K \u2013 $260K' }]
+      });
+
+      expect(putSpy).toHaveBeenCalledWith('contact_123', {
+        customFields: [{ id: 'fld_1', field_value: '$210K \u2013 $260K' }]
+      });
+      expect(result.verified).toBe(true);
+      expect(result.customFields).toEqual([{ id: 'fld_1', value: '$210K \u2013 $260K' }]);
+    });
+
+    it('throws when the read-back does not match the requested value', async () => {
+      jest.spyOn(mockGhlClient as any, 'getContact').mockResolvedValue({
+        success: true,
+        data: { id: 'contact_123', customFields: [{ id: 'fld_1', value: 'stale value' }] }
+      } as any);
+
+      await expect(
+        contactTools.executeTool('update_contact_custom_fields', {
+          contactId: 'contact_123',
+          customFields: [{ id: 'fld_1', value: 'new value' }]
+        })
+      ).rejects.toThrow(/not verified/);
     });
 
     it('should throw error for unknown tool', async () => {

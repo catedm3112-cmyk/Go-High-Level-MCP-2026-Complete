@@ -9,6 +9,9 @@ import {
   MCPCreateContactParams,
   MCPSearchContactsParams,
   MCPUpdateContactParams,
+  GHLCustomField,
+  MCPContactCustomFieldInput,
+  MCPUpdateContactCustomFieldsParams,
   MCPAddContactTagsParams,
   MCPRemoveContactTagsParams,
   // Task Management
@@ -139,9 +142,53 @@ export class ContactTools {
             lastName: { type: 'string', description: 'Contact last name' },
             email: { type: 'string', description: 'Contact email address' },
             phone: { type: 'string', description: 'Contact phone number' },
-            tags: { type: 'array', items: { type: 'string' }, description: 'Tags to assign to contact' }
+            tags: { type: 'array', items: { type: 'string' }, description: 'Tags to assign to contact' },
+            customFields: {
+              type: 'array',
+              description: 'Custom field values to set on the contact. Each entry: { id, value }',
+              items: {
+                type: 'object',
+                properties: {
+                  id: { type: 'string', description: 'Custom field ID' },
+                  key: { type: 'string', description: 'Custom field key (optional)' },
+                  value: { description: 'Value to set (string, array, or object)' }
+                },
+                required: ['id', 'value']
+              }
+            }
           },
           required: ['contactId']
+        },
+        _meta: {
+          labels: {
+            category: "contacts",
+            access: "write",
+            complexity: "simple"
+          }
+        }
+      },
+      {
+        name: 'update_contact_custom_fields',
+        description: 'Set one or more custom field values on a contact (PUT /contacts/{id} with customFields). Returns the saved customFields so the write can be verified. Use this instead of update_contact when only custom fields are changing.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            contactId: { type: 'string', description: 'Contact ID' },
+            customFields: {
+              type: 'array',
+              description: 'Custom field values to set. Each entry: { id, value }. Values may be strings, arrays, or objects; long JSON strings are supported.',
+              items: {
+                type: 'object',
+                properties: {
+                  id: { type: 'string', description: 'Custom field ID' },
+                  key: { type: 'string', description: 'Custom field key (optional)' },
+                  value: { description: 'Value to set (string, array, or object)' }
+                },
+                required: ['id', 'value']
+              }
+            }
+          },
+          required: ['contactId', 'customFields']
         },
         _meta: {
           labels: {
@@ -713,6 +760,8 @@ export class ContactTools {
           return await this.getContact(params.contactId);
         case 'update_contact':
           return await this.updateContact(params as MCPUpdateContactParams);
+        case 'update_contact_custom_fields':
+          return await this.updateContactCustomFields(params as MCPUpdateContactCustomFieldsParams);
         case 'delete_contact':
           return await this.deleteContact(params.contactId);
         case 'add_contact_tags':
@@ -846,7 +895,8 @@ export class ContactTools {
       lastName: params.lastName,
       email: params.email,
       phone: params.phone,
-      tags: params.tags
+      tags: params.tags,
+      ...(params.customFields ? { customFields: this.mapCustomFieldInputs(params.customFields) } : {})
     });
 
     if (!response.success) {
@@ -854,6 +904,62 @@ export class ContactTools {
     }
 
     return response.data!;
+  }
+
+  /**
+   * GHL's PUT /contacts accepts customFields entries keyed as field_value.
+   * MCP callers pass the more natural { id, value }; map it here so a
+   * mismatched key can never be silently dropped by the API.
+   */
+  private mapCustomFieldInputs(inputs: MCPContactCustomFieldInput[]): GHLCustomField[] {
+    // NOTE: ghl-types.ts declares `GHLCustomField` twice (contact write shape
+    // at ~line 62, custom-object schema shape at ~line 3394). TS declaration
+    // merging combines them, making schema-only props appear required here.
+    // The API contract for PUT /contacts customFields is { id, key?, field_value },
+    // so we cast to the merged type. TODO: rename the schema interface to
+    // GHLCustomObjectField and drop this cast.
+    return inputs.map(f => ({
+      id: f.id,
+      ...(f.key ? { key: f.key } : {}),
+      field_value: f.value
+    })) as unknown as GHLCustomField[];
+  }
+
+  private async updateContactCustomFields(
+    params: MCPUpdateContactCustomFieldsParams
+  ): Promise<{ contactId: string; verified: boolean; customFields: GHLCustomField[] }> {
+    if (!params.customFields?.length) {
+      throw new Error('customFields must contain at least one { id, value } entry');
+    }
+
+    const response = await this.ghlClient.updateContact(params.contactId, {
+      customFields: this.mapCustomFieldInputs(params.customFields)
+    });
+
+    if (!response.success) {
+      throw new Error(response.error?.message || 'Failed to update contact custom fields');
+    }
+
+    // Verify the write instead of trusting the PUT: re-read and confirm every
+    // requested field id is present with the requested value.
+    const readBack = await this.ghlClient.getContact(params.contactId);
+    const saved = (readBack.success && readBack.data?.customFields) || [];
+    const savedById = new Map(saved.map((f: any) => [f.id, f.value ?? f.field_value]));
+
+    const verified = params.customFields.every(f => {
+      const savedValue = savedById.get(f.id);
+      if (savedValue === undefined) return false;
+      return JSON.stringify(savedValue) === JSON.stringify(f.value);
+    });
+
+    if (!verified) {
+      throw new Error(
+        `Custom field write not verified on contact ${params.contactId}: the PUT returned success ` +
+        `but a re-read did not show the expected value(s). Check field IDs and value types.`
+      );
+    }
+
+    return { contactId: params.contactId, verified, customFields: saved as GHLCustomField[] };
   }
 
   private async deleteContact(contactId: string): Promise<{ succeded: boolean }> {
