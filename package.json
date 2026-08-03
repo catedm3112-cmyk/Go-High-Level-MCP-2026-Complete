@@ -28,6 +28,8 @@
     "start": "node dist/main.js",
     "start:stdio": "node dist/server.js",
     "start:http": "node dist/main.js",
+    "start:openai": "node dist/openai-main.js",
+    "dev:openai": "nodemon --exec ts-node src/openai-main.ts",
     "start:legacy": "node dist/http-server.js",
     "vercel-build": "tsc",
     "prepublishOnly": "npm run build",

@@ -131,13 +131,24 @@ export class EnhancedGHLClient extends GHLApiClient {
     this.enhancedAxios.interceptors.response.use(
       (response) => {
         this.trackRateLimit(response);
+        process.stderr.write(`[GHL API] Response ${response.status}: ${response.config.url}\n`);
         return response;
       },
-      (error) => {
+      (error: AxiosError<GHLErrorResponse>) => {
         if (error.response) this.trackRateLimit(error.response);
-        return Promise.reject(error);
+        return Promise.reject(this.handleApiError(error));
       }
     );
+
+    this.enhancedAxios.interceptors.request.use(config => {
+      process.stderr.write(`[GHL API] ${config.method?.toUpperCase()} ${config.url}\n`);
+      return config;
+    });
+
+    // All inherited API methods use this property. Replacing it here makes
+    // connection pooling apply to both generic makeRequest calls and the
+    // hundreds of legacy direct axios calls.
+    this.axiosInstance = this.enhancedAxios;
 
     // Cache with 30s TTL, 500 entries max
     this.cache = new TTLCache(30_000, 500);

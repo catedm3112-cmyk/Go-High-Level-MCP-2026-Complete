@@ -1,4 +1,44 @@
 > **🚀 Don't want to self-host?** [Join the waitlist for our fully managed solution →](https://mcp.localbosses.org)
+
+## OpenAI-optimized gateway
+
+This fork includes a separate, tool-only MCP gateway for ChatGPT/OpenAI while
+preserving the existing broad Claude-facing servers.
+
+The OpenAI gateway exposes only five tools:
+
+- `search` — find workflows, contacts, conversations, and the audit resource.
+- `fetch` — retrieve one resource returned by `search`.
+- `audit_account` — inspect configuration, workflow, and communication health.
+- `create_workflow_draft` — create a workflow without publishing it.
+- `send_communication` — preview or explicitly send one SMS/email.
+
+Run it with:
+
+```bash
+npm run build
+npm run start:openai
+```
+
+Required environment variables:
+
+```text
+GHL_API_KEY=...
+GHL_LOCATION_ID=...
+OPENAI_MCP_PUBLIC_BASE_URL=https://your-public-host.example
+```
+
+Recommended:
+
+```text
+OPENAI_MCP_BEARER_TOKEN=use-a-long-random-token
+OPENAI_MCP_PORT=8001
+VERIFY_GHL_ON_START=false
+```
+
+The MCP endpoint is `/mcp`; the health endpoint is `/health`. Workflow creation
+always produces a draft. Communication sends require a preview, the literal
+confirmation value `SEND`, and an idempotency key.
 > 
 > Zero setup. Zero maintenance. Just connect and automate.
 

@@ -388,8 +388,8 @@ import {
  * Handles all API communication with GHL services
  */
 export class GHLApiClient {
-  private axiosInstance: AxiosInstance;
-  private config: GHLConfig;
+  protected axiosInstance: AxiosInstance;
+  protected config: GHLConfig;
 
   constructor(config: GHLConfig) {
     this.config = config;
@@ -438,7 +438,7 @@ export class GHLApiClient {
   /**
    * Handle API errors and convert to standardized format
    */
-  private handleApiError(error: AxiosError<GHLErrorResponse>): Error {
+  protected handleApiError(error: AxiosError<GHLErrorResponse>): Error {
     const status = error.response?.status || 500;
     const message = error.response?.data?.message || error.message || 'Unknown error';
     const errorMessage = Array.isArray(message) ? message.join(', ') : message;
@@ -6878,4 +6878,4 @@ export class GHLApiClient {
       throw error;
     }
   }
-} 
+}
