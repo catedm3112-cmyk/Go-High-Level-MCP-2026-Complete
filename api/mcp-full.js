@@ -5,6 +5,12 @@
 
 const MCP_PROTOCOL_VERSION = "2024-11-05";
 const SERVER_INFO = { name: "ghl-mcp-server", version: "2.1.0" };
+const {
+  authorizeRequest,
+  isReadOnlyTool,
+  rejectUnauthorized,
+  setSecurityHeaders,
+} = require("./auth.js");
 
 // ─── GPT-compatible tool allowlist (exactly 128 tools) ───────────────────────────
 // ChatGPT enforces a hard cap of ~128 tools per MCP server. This hand-picked
@@ -146,7 +152,8 @@ function rpc(id, result, error) {
 
 // ─── MCP message processor ────────────────────────────────────────────────────
 
-async function processMessage(msg, registry) {
+async function processMessage(msg, registry, scope = "admin") {
+  const readOnly = scope === "read";
   switch (msg.method) {
     case "initialize":
       return rpc(msg.id, {
@@ -156,7 +163,8 @@ async function processMessage(msg, registry) {
       });
 
     case "tools/list": {
-      const defs = registry.getAllToolDefinitions([]);
+      const all = registry.getAllToolDefinitions([]);
+      const defs = readOnly ? all.filter(t => isReadOnlyTool(t.name)) : all;
       return rpc(msg.id, {
         tools: defs.map(t => ({
           name: t.name,
@@ -169,6 +177,8 @@ async function processMessage(msg, registry) {
     case "tools/call": {
       const { name, arguments: args } = msg.params || {};
       if (!name) return rpc(msg.id, null, { code: -32602, message: "Missing tool name" });
+      if (readOnly && !isReadOnlyTool(name))
+        return rpc(msg.id, null, { code: -32001, message: `Tool ${name} requires the admin token` });
       try {
         const result = await registry.callTool(name, args || {});
         if (result === undefined)
@@ -190,13 +200,6 @@ async function processMessage(msg, registry) {
 
 // ─── CORS & SSE helpers ───────────────────────────────────────────────────────
 
-function setCORS(res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Accept, Authorization");
-  res.setHeader("Access-Control-Max-Age", "86400");
-}
-
 function sendSSE(res, data) {
   const msg = typeof data === "string" ? data : JSON.stringify(data);
   res.write(`data: ${msg}\n\n`);
@@ -211,24 +214,13 @@ function sendSSEEvent(res, event, data) {
 
 // Health / root
 async function handleHealth(req, res) {
-  try {
-    const registry = await getRegistry();
-    res.status(200).json({
-      status: "healthy",
-      server: SERVER_INFO.name,
-      version: SERVER_INFO.version,
-      protocol: MCP_PROTOCOL_VERSION,
-      timestamp: new Date().toISOString(),
-      toolCount: registry.getToolCount(),
-      endpoints: {
-        mcp:  "/mcp (POST, Streamable HTTP — all tools, Claude)",
-        gpt:  "/mcp-gpt (POST, ChatGPT — 128 curated tools)",
-        sse:  "/sse (SSE)",
-      },
-    });
-  } catch (err) {
-    res.status(500).json({ status: "error", error: err.message });
-  }
+  res.status(200).json({
+    status: "healthy",
+    server: SERVER_INFO.name,
+    version: SERVER_INFO.version,
+    authRequired: true,
+    deployment: process.env.VERCEL_GIT_COMMIT_SHA || null,
+  });
 }
 
 // /mcp — Streamable HTTP (GET=discovery, POST=JSON-RPC)
@@ -265,7 +257,7 @@ async function handleMcp(req, res) {
       }
 
       try {
-        const response = await processMessage(msg, registry);
+        const response = await processMessage(msg, registry, req.mcpScope);
         res.status(200).setHeader("Content-Type", "application/json").end(JSON.stringify(response));
       } catch (err) {
         res.status(500).json(rpc(msg.id, null, { code: -32603, message: err.message }));
@@ -281,9 +273,6 @@ async function handleSse(req, res) {
       "Content-Type":  "text/event-stream",
       "Cache-Control": "no-cache",
       "Connection":    "keep-alive",
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Headers": "Content-Type, Accept, Authorization",
-      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
     });
 
     sendSSEEvent(res, "endpoint", "/sse");
@@ -319,7 +308,7 @@ async function handleSse(req, res) {
       }
 
       try {
-        const response = await processMessage(msg, registry);
+        const response = await processMessage(msg, registry, req.mcpScope);
         res.writeHead(200, { "Content-Type": "text/event-stream" });
         sendSSE(res, response);
         setTimeout(() => res.end(), 100);
@@ -407,7 +396,8 @@ async function handleMcpGpt(req, res) {
         let response;
         if (msg.method === "tools/list") {
           const allDefs = registry.getAllToolDefinitions([]);
-          const filtered = allDefs.filter(t => GPT_TOOL_ALLOWLIST.has(t.name));
+          const filtered = allDefs.filter(t => GPT_TOOL_ALLOWLIST.has(t.name) &&
+            (req.mcpScope !== "read" || isReadOnlyTool(t.name)));
           response = rpc(msg.id, {
             tools: filtered.map(t => ({
               name: t.name,
@@ -417,7 +407,7 @@ async function handleMcpGpt(req, res) {
           });
         } else {
           // initialize, tools/call, ping — delegate to the shared processor unchanged
-          response = await processMessage(msg, registry);
+          response = await processMessage(msg, registry, req.mcpScope);
         }
         res.status(200).setHeader("Content-Type", "application/json").end(JSON.stringify(response));
       } catch (err) {
@@ -430,12 +420,22 @@ async function handleMcpGpt(req, res) {
 // ─── Main handler ─────────────────────────────────────────────────────────────
 
 module.exports = async (req, res) => {
-  setCORS(res);
-  if (req.method === "OPTIONS") { res.status(200).end(); return; }
-
   const url = req.url || "/";
+  setSecurityHeaders(req, res);
+
+  if (req.method === "OPTIONS") {
+    const origin = String(req.headers?.origin || "");
+    const allowedOrigin = res.getHeader("Access-Control-Allow-Origin");
+    res.status(!origin || allowedOrigin ? 204 : 403).end();
+    return;
+  }
 
   if (url === "/" || url === "/health") return handleHealth(req, res);
+
+  const auth = authorizeRequest(req);
+  if (!auth.ok) return rejectUnauthorized(res, auth);
+  req.mcpScope = auth.scope;
+
   if (url === "/mcp" || url.startsWith("/mcp?") ||
       url === "/mcp-full" || url.startsWith("/mcp-full?")) return handleMcp(req, res);
   if (url === "/mcp-gpt" || url.startsWith("/mcp-gpt?")) return handleMcpGpt(req, res);

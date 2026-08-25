@@ -5,6 +5,11 @@ const MCP_PROTOCOL_VERSION = "2024-11-05";
 const GHL_BASE_URL = "https://services.leadconnectorhq.com";
 
 const SERVER_INFO = { name: "ghl-mcp-server", version: "2.0.0" };
+const {
+  authorizeRequest,
+  rejectUnauthorized,
+  setSecurityHeaders,
+} = require("./auth.js");
 
 // ─── GHL API Helper ────────────────────────────────────────────────────────────
 
@@ -1913,13 +1918,6 @@ async function processMessage(msg) {
 
 // ─── CORS & SSE Helpers ────────────────────────────────────────────────────────
 
-function setCORS(res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Accept, Authorization");
-  res.setHeader("Access-Control-Max-Age", "86400");
-}
-
 function sendSSE(res, data) {
   const msg = typeof data === "string" ? data : JSON.stringify(data);
   res.write(`data: ${msg}\n\n`);
@@ -1936,9 +1934,17 @@ module.exports = async (req, res) => {
   // Normalize legacy-suffixed paths so /mcp-legacy and /sse-legacy work as rollback
   if (req.url) req.url = req.url.replace("/mcp-legacy", "/mcp").replace("/sse-legacy", "/sse");
   log(`${req.method} ${req.url}`);
-  setCORS(res);
+  setSecurityHeaders(req, res);
 
-  if (req.method === "OPTIONS") { res.status(200).end(); return; }
+  if (req.method === "OPTIONS") {
+    const origin = String(req.headers?.origin || "");
+    const allowedOrigin = res.getHeader("Access-Control-Allow-Origin");
+    res.status(!origin || allowedOrigin ? 204 : 403).end();
+    return;
+  }
+
+  const auth = authorizeRequest(req);
+  if (!auth.ok) return rejectUnauthorized(res, auth);
 
   // Health check
   if (req.url === "/" || req.url === "/health") {
@@ -1991,10 +1997,7 @@ module.exports = async (req, res) => {
     res.writeHead(200, {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
-      "Connection": "keep-alive",
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Headers": "Content-Type, Accept, Authorization",
-      "Access-Control-Allow-Methods": "GET, POST, OPTIONS"
+      "Connection": "keep-alive"
     });
 
     if (req.method === "GET") {
