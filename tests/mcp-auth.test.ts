@@ -55,7 +55,7 @@ describe("hosted MCP authentication", () => {
       expect(isReadOnlyTool(ok)).toBe(true);
     for (const bad of ["send_sms", "send_email", "delete_contact", "update_contact", "create_opportunity",
       "add_contact_tags", "ghl_publish_workflow", "ghl_trigger_workflow", "bulk_update_contact_tags",
-      "purchase_phone_number", "upsert_contact", "enable_trigger", "reply_to_review"])
+      "purchase_phone_number", "upsert_contact", "enable_trigger", "reply_to_review", "verify_email"])
       expect(isReadOnlyTool(bad)).toBe(false);
   });
 

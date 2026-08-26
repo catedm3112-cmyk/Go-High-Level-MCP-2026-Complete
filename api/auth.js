@@ -33,7 +33,7 @@ const READ_ONLY_TOOL = new RegExp(
       "ghl_get_", "ghl_list_", "crm_list_", "crm_find_", "crm_prepare_",
       "crm_location_health_check$", "crm_[a-z_]+_workspace$",
       "audit_location_ads_setup$", "download_transcription$", "validate_group_slug$",
-      "generate_estimate_number$", "generate_invoice_number$", "verify_email$",
+      "generate_estimate_number$", "generate_invoice_number$",
     ].join("|") +
   ")"
 );

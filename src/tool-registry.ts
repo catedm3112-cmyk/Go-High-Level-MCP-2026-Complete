@@ -97,7 +97,6 @@ function inferAnnotations(toolName: string, meta?: any): ToolAnnotations {
     name.startsWith('generate_invoice_number') ||
     name.startsWith('generate_estimate_number') ||
     name === 'get_timezones' ||
-    name === 'verify_email' ||
     name === 'live_chat_typing';
 
   // Destructive operations (DELETE)
