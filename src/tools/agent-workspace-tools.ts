@@ -496,7 +496,7 @@ export class AgentWorkspaceTools {
         type: 'object',
         properties: {
           locationId: { type: 'string', description: 'GHL location/subaccount ID. Defaults to configured GHL_LOCATION_ID.' },
-          executeConfirmed: { type: 'boolean', description: 'Reserved for future direct execution. Current tools always return a staged confirmation queue.' },
+          executeConfirmed: { type: 'boolean', description: 'After the user confirms the staged queue, set true to execute its write actions. Requires the admin MCP token.' },
           ...(spec.inputProperties || {}),
         },
         required: spec.required || [],

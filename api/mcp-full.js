@@ -11,6 +11,10 @@ const {
   rejectUnauthorized,
   setSecurityHeaders,
 } = require("./auth.js");
+const {
+  executeConfirmedWorkflow,
+  isConfirmedExecutionRequest,
+} = require("./confirmed-execution.js");
 
 // ─── GPT-compatible tool allowlist (exactly 128 tools) ───────────────────────────
 // ChatGPT enforces a hard cap of ~128 tools per MCP server. This hand-picked
@@ -177,12 +181,14 @@ async function processMessage(msg, registry, scope = "admin") {
     case "tools/call": {
       const { name, arguments: args } = msg.params || {};
       if (!name) return rpc(msg.id, null, { code: -32602, message: "Missing tool name" });
-      if (readOnly && !isReadOnlyTool(name))
+      const confirmedExecution = isConfirmedExecutionRequest(name, args);
+      if (readOnly && (!isReadOnlyTool(name) || confirmedExecution))
         return rpc(msg.id, null, { code: -32001, message: `Tool ${name} requires the admin token` });
       try {
-        const result = await registry.callTool(name, args || {});
+        let result = await registry.callTool(name, args || {});
         if (result === undefined)
           return rpc(msg.id, null, { code: -32601, message: `Tool not found: ${name}` });
+        if (confirmedExecution) result = await executeConfirmedWorkflow(registry, result);
         const text = typeof result === "string" ? result : JSON.stringify(result, null, 2);
         return rpc(msg.id, { content: [{ type: "text", text }] });
       } catch (err) {
