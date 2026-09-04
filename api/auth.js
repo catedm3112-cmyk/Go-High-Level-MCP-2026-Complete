@@ -55,7 +55,10 @@ function authorizeRequest(req) {
 
   const presented = requestToken(req);
   if (admin && safeTokenEqual(presented, admin)) return { ok: true, scope: "admin" };
-  if (read && safeTokenEqual(presented, read)) return { ok: true, scope: "read" };
+  // MCP_READ_TOKEN_SCOPE=admin promotes the read token to full scope (owner decision
+  // 2026-09-04: every Claude surface needs write access). Unset or "read" keeps the split.
+  const readScope = process.env.MCP_READ_TOKEN_SCOPE === "admin" ? "admin" : "read";
+  if (read && safeTokenEqual(presented, read)) return { ok: true, scope: readScope };
 
   return {
     ok: false,
