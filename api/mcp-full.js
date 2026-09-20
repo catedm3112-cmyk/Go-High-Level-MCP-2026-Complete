@@ -1,16 +1,18 @@
-// GHL MCP Server v2.1 — 552 tools via TypeScript ToolRegistry
+// GHL MCP Server v2.2 — 552 tools via TypeScript ToolRegistry, every sub-account
+// behind one URL (see api/locations.js for the credential modes).
 // Handles: /mcp (Streamable HTTP), /sse (SSE transport), /mcp-full (alias)
 //
 // /mcp-legacy and /sse-legacy still route to api/index.js for rollback.
 
 const MCP_PROTOCOL_VERSION = "2024-11-05";
-const SERVER_INFO = { name: "ghl-mcp-server", version: "2.1.0" };
+const SERVER_INFO = { name: "ghl-mcp-server", version: "2.2.0" };
 const {
   authorizeRequest,
   isReadOnlyTool,
   rejectUnauthorized,
   setSecurityHeaders,
 } = require("./auth.js");
+const { getLocationManager } = require("./locations.js");
 const {
   executeConfirmedWorkflow,
   isConfirmedExecutionRequest,
@@ -106,45 +108,55 @@ const GPT_TOOL_ALLOWLIST = new Set([
   "get_media_files", "get_webhooks", "create_webhook", "get_snapshots", "get_location_templates",
 ]);
 
-// ─── Registry (lazy singleton) ────────────────────────────────────────────────
+// ─── Registry (one per sub-account, via the location manager) ─────────────────
 
-let _registry = null;
-let _registryError = null;
-let _initPromise = null;
+const locations = getLocationManager();
 
-function getRegistry() {
-  if (_registry) return Promise.resolve(_registry);
-  if (_registryError) return Promise.reject(new Error(_registryError));
-  if (_initPromise) return _initPromise;
+function getRegistry(locationId) {
+  return locations.getRegistry(locationId);
+}
 
-  _initPromise = (async () => {
-    try {
-      const { GHLApiClient } = require("../dist/clients/ghl-api-client.js");
-      const { ToolRegistry } = require("../dist/tool-registry.js");
+const LIST_LOCATIONS_TOOL = {
+  name: "list_locations",
+  description:
+    "List the GoHighLevel sub-accounts this server can act in, with the default. " +
+    "Pass any tool a `locationId` (id or name) to act in a specific sub-account.",
+  inputSchema: { type: "object", properties: {} },
+};
 
-      const apiKey     = process.env.GHL_API_KEY;
-      const locationId = process.env.GHL_LOCATION_ID;
+async function locationSchemaDescription() {
+  const list = await locations.listLocations();
+  const def = locations.defaultLocationId;
+  const opts = list.map(l => `${l.name} = ${l.id}${l.id === def ? " (default)" : ""}`).join("; ");
+  return `Sub-account to act in (id or name). ${opts}`;
+}
 
-      if (!apiKey)     throw new Error("GHL_API_KEY env var not set");
-      if (!locationId) throw new Error("GHL_LOCATION_ID env var not set");
+// Every tool gets a `locationId` argument so one connector can address any
+// sub-account. Tools that already declare one keep their own schema.
+function withLocationArg(tool, description) {
+  const schema = tool.inputSchema && typeof tool.inputSchema === "object"
+    ? tool.inputSchema
+    : { type: "object", properties: {} };
+  const props = { ...(schema.properties || {}) };
+  if (!props.locationId) props.locationId = { type: "string", description };
+  return { ...tool, inputSchema: { ...schema, properties: props } };
+}
 
-      const ghlClient = new GHLApiClient({
-        accessToken: apiKey,
-        baseUrl:     "https://services.leadconnectorhq.com",
-        version:     "2021-07-28",
-        locationId,
-      });
+async function listToolDefinitions(registry, filter) {
+  const description = await locationSchemaDescription();
+  const all = registry.getAllToolDefinitions([]);
+  const defs = filter ? all.filter(filter) : all;
+  return [LIST_LOCATIONS_TOOL, ...defs].map(t => withLocationArg(t, description));
+}
 
-      _registry = new ToolRegistry(ghlClient);
-      return _registry;
-    } catch (err) {
-      _registryError = err.message;
-      _initPromise = null;
-      throw err;
-    }
-  })();
-
-  return _initPromise;
+async function callListLocations() {
+  const list = await locations.listLocations();
+  const def = locations.defaultLocationId;
+  return {
+    mode: locations.mode,
+    defaultLocationId: def,
+    locations: list.map(l => ({ ...l, default: l.id === def })),
+  };
 }
 
 // ─── JSON-RPC helpers ─────────────────────────────────────────────────────────
@@ -156,7 +168,9 @@ function rpc(id, result, error) {
 
 // ─── MCP message processor ────────────────────────────────────────────────────
 
-async function processMessage(msg, registry, scope = "admin") {
+// scope: "admin" | "read" (from auth). toolFilter: optional allowlist predicate
+// (used by /mcp-gpt). The registry is chosen per call from args.locationId.
+async function processMessage(msg, scope = "admin", toolFilter = null) {
   const readOnly = scope === "read";
   switch (msg.method) {
     case "initialize":
@@ -167,8 +181,10 @@ async function processMessage(msg, registry, scope = "admin") {
       });
 
     case "tools/list": {
-      const all = registry.getAllToolDefinitions([]);
-      const defs = readOnly ? all.filter(t => isReadOnlyTool(t.name)) : all;
+      const registry = await getRegistry();
+      const filter = t =>
+        (!toolFilter || toolFilter(t)) && (!readOnly || isReadOnlyTool(t.name));
+      const defs = await listToolDefinitions(registry, filter);
       return rpc(msg.id, {
         tools: defs.map(t => ({
           name: t.name,
@@ -182,10 +198,22 @@ async function processMessage(msg, registry, scope = "admin") {
       const { name, arguments: args } = msg.params || {};
       if (!name) return rpc(msg.id, null, { code: -32602, message: "Missing tool name" });
       const confirmedExecution = isConfirmedExecutionRequest(name, args);
-      if (readOnly && (!isReadOnlyTool(name) || confirmedExecution))
+      if (readOnly && name !== LIST_LOCATIONS_TOOL.name &&
+          (!isReadOnlyTool(name) || confirmedExecution))
         return rpc(msg.id, null, { code: -32001, message: `Tool ${name} requires the admin token` });
       try {
-        let result = await registry.callTool(name, args || {});
+        if (name === LIST_LOCATIONS_TOOL.name) {
+          const text = JSON.stringify(await callListLocations(), null, 2);
+          return rpc(msg.id, { content: [{ type: "text", text }] });
+        }
+        const callArgs = { ...(args || {}) };
+        const targetLocation = await locations.resolveLocationId(callArgs.locationId);
+        const registry = await getRegistry(targetLocation);
+        // Normalise a name ("TruTerra") to the id the API expects; leave it out
+        // entirely when the caller didn't ask, so each tool's own default applies.
+        if (callArgs.locationId) callArgs.locationId = targetLocation;
+        else delete callArgs.locationId;
+        let result = await registry.callTool(name, callArgs);
         if (result === undefined)
           return rpc(msg.id, null, { code: -32601, message: `Tool not found: ${name}` });
         if (confirmedExecution) result = await executeConfirmedWorkflow(registry, result);
@@ -226,6 +254,8 @@ async function handleHealth(req, res) {
     version: SERVER_INFO.version,
     authRequired: true,
     deployment: process.env.VERCEL_GIT_COMMIT_SHA || null,
+    credentialMode: locations.mode,
+    defaultLocationId: locations.defaultLocationId || null,
   });
 }
 
@@ -255,15 +285,8 @@ async function handleMcp(req, res) {
       try { msg = JSON.parse(body); }
       catch { res.status(400).json(rpc(null, null, { code: -32700, message: "Parse error" })); return; }
 
-      let registry;
-      try { registry = await getRegistry(); }
-      catch (err) {
-        res.status(200).json(rpc(msg.id, null, { code: -32603, message: `Registry unavailable: ${err.message}` }));
-        return;
-      }
-
       try {
-        const response = await processMessage(msg, registry, req.mcpScope);
+        const response = await processMessage(msg, req.mcpScope);
         res.status(200).setHeader("Content-Type", "application/json").end(JSON.stringify(response));
       } catch (err) {
         res.status(500).json(rpc(msg.id, null, { code: -32603, message: err.message }));
@@ -304,17 +327,8 @@ async function handleSse(req, res) {
         return;
       }
 
-      let registry;
-      try { registry = await getRegistry(); }
-      catch (err) {
-        res.writeHead(200, { "Content-Type": "text/event-stream" });
-        sendSSE(res, rpc(msg.id, null, { code: -32603, message: `Registry unavailable: ${err.message}` }));
-        res.end();
-        return;
-      }
-
       try {
-        const response = await processMessage(msg, registry, req.mcpScope);
+        const response = await processMessage(msg, req.mcpScope);
         res.writeHead(200, { "Content-Type": "text/event-stream" });
         sendSSE(res, response);
         setTimeout(() => res.end(), 100);
@@ -391,29 +405,13 @@ async function handleMcpGpt(req, res) {
       try { msg = JSON.parse(body); }
       catch { res.status(400).json(rpc(null, null, { code: -32700, message: "Parse error" })); return; }
 
-      let registry;
-      try { registry = await getRegistry(); }
-      catch (err) {
-        res.status(200).json(rpc(msg.id, null, { code: -32603, message: `Registry unavailable: ${err.message}` }));
-        return;
-      }
-
       try {
-        let response;
-        if (msg.method === "tools/list") {
-          const allDefs = registry.getAllToolDefinitions([]);
-          const filtered = allDefs.filter(t => GPT_TOOL_ALLOWLIST.has(t.name) &&
-            (req.mcpScope !== "read" || isReadOnlyTool(t.name)));
-          response = rpc(msg.id, {
-            tools: filtered.map(t => ({
-              name: t.name,
-              description: t.description || "",
-              inputSchema: sanitizeSchemaForGPT(t.inputSchema) || { type: "object", properties: {} },
-            })),
-          });
-        } else {
-          // initialize, tools/call, ping — delegate to the shared processor unchanged
-          response = await processMessage(msg, registry, req.mcpScope);
+        let response = await processMessage(msg, req.mcpScope, t => GPT_TOOL_ALLOWLIST.has(t.name));
+        if (msg.method === "tools/list" && response.result?.tools) {
+          response.result.tools = response.result.tools.map(t => ({
+            ...t,
+            inputSchema: sanitizeSchemaForGPT(t.inputSchema) || { type: "object", properties: {} },
+          }));
         }
         res.status(200).setHeader("Content-Type", "application/json").end(JSON.stringify(response));
       } catch (err) {

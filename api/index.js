@@ -10,13 +10,14 @@ const {
   rejectUnauthorized,
   setSecurityHeaders,
 } = require("./auth.js");
+const { getLocationManager } = require("./locations.js");
 
 // ─── GHL API Helper ────────────────────────────────────────────────────────────
+// Legacy endpoint: always acts in the default sub-account. Credentials come from
+// the location manager (agency-minted token, per-location PIT, or GHL_API_KEY).
 
 async function ghlRequest(method, path, body = null, version = "2021-07-28") {
-  const apiKey = process.env.GHL_API_KEY;
-  const locationId = process.env.GHL_LOCATION_ID;
-  if (!apiKey) throw new Error("GHL_API_KEY environment variable not set");
+  const { token: apiKey } = await getLocationManager().getDefaultCredentials();
 
   const url = `${GHL_BASE_URL}${path}`;
   const headers = {
@@ -38,7 +39,7 @@ async function ghlRequest(method, path, body = null, version = "2021-07-28") {
   return data;
 }
 
-function loc() { return process.env.GHL_LOCATION_ID; }
+function loc() { return getLocationManager().defaultLocationId; }
 
 // ─── Tool Definitions ──────────────────────────────────────────────────────────
 
