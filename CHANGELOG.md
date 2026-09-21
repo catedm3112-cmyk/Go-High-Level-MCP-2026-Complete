@@ -6,6 +6,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and [Sem
 
 ---
 
+## [2.3.1] — 2026-09-21 (hosted bridge)
+
+### Fixed
+- JSON-RPC **notifications** (`notifications/initialized`, …) are acknowledged with `202` and an empty body.
+  They used to be answered with a `Method not found` error carrying `id: null`, which strict Streamable-HTTP
+  clients (ChatGPT) treat as a failed handshake — the connector saved but listed no tools.
+- `initialize` answers with the protocol revision the client requested (`2025-06-18`, `2025-03-26`,
+  `2024-11-05`) instead of always `2024-11-05`.
+- `/mcp-gpt`: validation-only schema keywords (`minimum`, `maximum`, `maxLength`, `format`,
+  `additionalProperties`, …) are dropped, objects always carry `properties`, untyped leaves become strings.
+
+### Added
+- One log line per call (endpoint, JSON-RPC method, tool name, client name — never arguments or tokens).
+
+---
+
 ## [2.3.0] — 2026-09-21 (hosted bridge)
 
 ### Added

@@ -5,7 +5,14 @@
 // /mcp-legacy and /sse-legacy still route to api/index.js for rollback.
 
 const MCP_PROTOCOL_VERSION = "2024-11-05";
-const SERVER_INFO = { name: "ghl-mcp-server", version: "2.3.0" };
+// This server only does request → JSON response for tools, which is valid in every
+// revision below, so it answers with the revision the client asked for (the spec
+// requires that when it is supported); unknown revisions get the newest one we know.
+const SUPPORTED_PROTOCOL_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"];
+function negotiateProtocolVersion(requested) {
+  return SUPPORTED_PROTOCOL_VERSIONS.includes(requested) ? requested : SUPPORTED_PROTOCOL_VERSIONS[0];
+}
+const SERVER_INFO = { name: "ghl-mcp-server", version: "2.3.1" };
 const {
   authorizeRequest,
   isReadOnlyTool,
@@ -192,7 +199,7 @@ async function processMessage(msg, scope = "admin", toolFilter = null) {
   switch (msg.method) {
     case "initialize":
       return rpc(msg.id, {
-        protocolVersion: MCP_PROTOCOL_VERSION,
+        protocolVersion: negotiateProtocolVersion(msg.params?.protocolVersion),
         capabilities: { tools: {} },
         serverInfo: SERVER_INFO,
       });
@@ -261,6 +268,24 @@ async function processMessage(msg, scope = "admin", toolFilter = null) {
   }
 }
 
+// JSON-RPC notifications (no id) get 202 + empty body, as Streamable HTTP requires.
+// Answering them with a JSON-RPC error (the pre-2.3.1 behaviour) makes strict clients
+// such as ChatGPT treat the handshake as failed and show no tools.
+function isNotification(msg) {
+  return msg && !Array.isArray(msg) && msg.id === undefined && typeof msg.method === "string";
+}
+
+// One line per call: endpoint, method, tool name. Never arguments (customer data) or tokens.
+function logCall(endpoint, req, msg, extra = {}) {
+  try {
+    console.log(JSON.stringify({
+      ep: endpoint, method: msg?.method, tool: msg?.params?.name,
+      client: msg?.params?.clientInfo?.name, proto: msg?.params?.protocolVersion,
+      ua: String(req.headers?.["user-agent"] || "").slice(0, 60), ...extra,
+    }));
+  } catch { /* logging must never break a request */ }
+}
+
 // ─── CORS & SSE helpers ───────────────────────────────────────────────────────
 
 function sendSSE(res, data) {
@@ -313,6 +338,9 @@ async function handleMcp(req, res) {
       let msg;
       try { msg = JSON.parse(body); }
       catch { res.status(400).json(rpc(null, null, { code: -32700, message: "Parse error" })); return; }
+
+      logCall("/mcp", req, msg);
+      if (isNotification(msg)) { res.status(202).end(); return; }
 
       try {
         const response = await processMessage(msg, req.mcpScope);
@@ -374,14 +402,20 @@ async function handleSse(req, res) {
 // ChatGPT's MCP client rejects schemas with:
 //   - `default` keyword in property definitions
 //   - `type: "array"` properties without an `items` sub-schema
-// This sanitizer strips those before sending tools/list to GPT.
+// and is strict about shape in general, so validation-only keywords (they tell the model
+// nothing the description doesn't) are dropped, objects always carry `properties`, and a
+// leaf with no type at all is presented as a string.
+const GPT_DROPPED_KEYWORDS = new Set([
+  "default", "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "minLength", "maxLength",
+  "minItems", "maxItems", "pattern", "format", "additionalProperties", "$schema",
+]);
 
 function sanitizeSchemaForGPT(schema) {
   if (!schema || typeof schema !== "object" || Array.isArray(schema)) return schema;
 
   const result = {};
   for (const [key, value] of Object.entries(schema)) {
-    if (key === "default") continue; // GPT rejects `default`
+    if (GPT_DROPPED_KEYWORDS.has(key)) continue;
 
     if (key === "properties" && value && typeof value === "object") {
       result.properties = {};
@@ -401,6 +435,10 @@ function sanitizeSchemaForGPT(schema) {
   if (result.type === "array" && !result.items) {
     result.items = {};
   }
+  if (result.type === "object" && !result.properties) result.properties = {};
+  const untyped = !result.type && !result.enum && !result.properties && !result.items &&
+    !result.anyOf && !result.oneOf && !result.allOf;
+  if (untyped && Object.keys(result).length) result.type = "string";
 
   return result;
 }
@@ -434,6 +472,8 @@ async function handleMcpGpt(req, res) {
       try { msg = JSON.parse(body); }
       catch { res.status(400).json(rpc(null, null, { code: -32700, message: "Parse error" })); return; }
 
+      if (isNotification(msg)) { logCall("/mcp-gpt", req, msg); res.status(202).end(); return; }
+
       try {
         let response = await processMessage(msg, req.mcpScope, t => GPT_TOOL_ALLOWLIST.has(t.name));
         if (msg.method === "tools/list" && response.result?.tools) {
@@ -442,6 +482,7 @@ async function handleMcpGpt(req, res) {
             inputSchema: sanitizeSchemaForGPT(t.inputSchema) || { type: "object", properties: {} },
           }));
         }
+        logCall("/mcp-gpt", req, msg, { tools: response.result?.tools?.length, error: response.error?.message });
         res.status(200).setHeader("Content-Type", "application/json").end(JSON.stringify(response));
       } catch (err) {
         res.status(500).json(rpc(msg.id, null, { code: -32603, message: err.message }));
