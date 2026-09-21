@@ -8,12 +8,18 @@
 //                shortly before they expire. Sub-accounts are discovered from
 //                /locations/search (or pinned with GHL_LOCATION_IDS).
 //
-//   2. KEYS    — GHL_LOCATION_KEYS="<locationId>=<pit>,<locationId>=<pit>".
-//                One sub-account PIT per location, no agency key needed.
+//   2. KEYS    — one sub-account PIT per location, no agency key needed. Keys
+//                are collected from, in order of precedence:
+//                  GHL_KEY_<locationId>=<pit>        (one env var per sub-account;
+//                                                     rotate one without touching the rest)
+//                  GHL_LOCATION_KEYS="<locationId>=<pit>,<locationId>=<pit>"
+//                  GHL_API_KEY + GHL_LOCATION_ID     (the legacy pair counts as one key, so
+//                                                     a legacy deployment grows into keys mode
+//                                                     by adding GHL_KEY_<otherLocation>)
 //                Optional GHL_LOCATION_NAMES="<locationId>=<name>,...".
 //
-//   3. LEGACY  — GHL_API_KEY + GHL_LOCATION_ID. Exactly the pre-2026-09 setup:
-//                one sub-account, one key.
+//   3. LEGACY  — GHL_API_KEY + GHL_LOCATION_ID only. Exactly the pre-2026-09
+//                setup: one sub-account, one key.
 //
 // GHL_DEFAULT_LOCATION_ID picks which sub-account a call lands in when the
 // caller doesn't pass locationId (falls back to GHL_LOCATION_ID, then the
@@ -35,10 +41,30 @@ function parsePairs(raw) {
   return out;
 }
 
-function detectMode() {
-  if (process.env.GHL_AGENCY_KEY && process.env.GHL_COMPANY_ID) return "agency";
-  if (process.env.GHL_LOCATION_KEYS) return "keys";
-  if (process.env.GHL_API_KEY && process.env.GHL_LOCATION_ID) return "legacy";
+const PER_LOCATION_KEY = /^GHL_KEY_([A-Za-z0-9]+)$/;
+
+function perLocationKeys(env = process.env) {
+  const out = {};
+  for (const [name, value] of Object.entries(env)) {
+    const m = PER_LOCATION_KEY.exec(name);
+    const key = String(value || "").trim();
+    if (m && key) out[m[1]] = key;
+  }
+  return out;
+}
+
+// Every sub-account PIT the deployment knows, most specific source last so it wins.
+function collectKeys(env = process.env) {
+  const keys = {};
+  if (env.GHL_API_KEY && env.GHL_LOCATION_ID) keys[env.GHL_LOCATION_ID] = env.GHL_API_KEY;
+  Object.assign(keys, parsePairs(env.GHL_LOCATION_KEYS), perLocationKeys(env));
+  return keys;
+}
+
+function detectMode(env = process.env) {
+  if (env.GHL_AGENCY_KEY && env.GHL_COMPANY_ID) return "agency";
+  if (env.GHL_LOCATION_KEYS || Object.keys(perLocationKeys(env)).length) return "keys";
+  if (env.GHL_API_KEY && env.GHL_LOCATION_ID) return "legacy";
   return "unconfigured";
 }
 
@@ -77,7 +103,7 @@ class LocationManager {
     this._tokenPromises = new Map(); // locationId → in-flight mint
     this._registries = new Map();    // locationId → { client, registry, token }
     this._names = parsePairs(process.env.GHL_LOCATION_NAMES);
-    this._keys = this.mode === "keys" ? parsePairs(process.env.GHL_LOCATION_KEYS) : {};
+    this._keys = this.mode === "keys" ? collectKeys() : {};
   }
 
   // ── Discovery ──────────────────────────────────────────────────────────────
@@ -96,7 +122,7 @@ class LocationManager {
     if (this.mode === "unconfigured") {
       throw new Error(
         "No GHL credentials configured. Set GHL_AGENCY_KEY + GHL_COMPANY_ID (agency mode), " +
-        "GHL_LOCATION_KEYS (per-location PITs), or GHL_API_KEY + GHL_LOCATION_ID (legacy)."
+        "GHL_KEY_<locationId> / GHL_LOCATION_KEYS (per-location PITs), or GHL_API_KEY + GHL_LOCATION_ID (legacy)."
       );
     }
     const fresh = this._locations && Date.now() - this._locationsFetchedAt < LOCATION_LIST_TTL_MS;
@@ -232,4 +258,4 @@ function getLocationManager() {
   return _manager;
 }
 
-module.exports = { getLocationManager, LocationManager, detectMode };
+module.exports = { getLocationManager, LocationManager, detectMode, collectKeys };

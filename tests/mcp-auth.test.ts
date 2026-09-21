@@ -8,19 +8,44 @@ const {
 
 describe("hosted MCP authentication", () => {
   const originalToken = process.env.MCP_ACCESS_TOKEN;
+  const originalSingle = process.env.MCP_TOKEN;
   const originalRead = process.env.MCP_READ_TOKEN;
   const originalOrigins = process.env.MCP_ALLOWED_ORIGINS;
 
   afterEach(() => {
     if (originalToken === undefined) delete process.env.MCP_ACCESS_TOKEN;
     else process.env.MCP_ACCESS_TOKEN = originalToken;
+    if (originalSingle === undefined) delete process.env.MCP_TOKEN;
+    else process.env.MCP_TOKEN = originalSingle;
     if (originalRead === undefined) delete process.env.MCP_READ_TOKEN;
     else process.env.MCP_READ_TOKEN = originalRead;
     if (originalOrigins === undefined) delete process.env.MCP_ALLOWED_ORIGINS;
     else process.env.MCP_ALLOWED_ORIGINS = originalOrigins;
   });
 
+  it("accepts MCP_TOKEN as the single bearer, with admin scope", () => {
+    delete process.env.MCP_ACCESS_TOKEN;
+    delete process.env.MCP_READ_TOKEN;
+    process.env.MCP_TOKEN = "the-one-token";
+    expect(authorizeRequest({ headers: { authorization: "Bearer the-one-token" }, url: "/mcp" }))
+      .toEqual({ ok: true, scope: "admin" });
+    expect(authorizeRequest({ headers: { authorization: "Bearer other" }, url: "/mcp" }))
+      .toEqual(expect.objectContaining({ ok: false, status: 401 }));
+  });
+
+  it("keeps the pre-2.3 token names working next to MCP_TOKEN", () => {
+    process.env.MCP_TOKEN = "the-one-token";
+    process.env.MCP_ACCESS_TOKEN = "old-admin-token";
+    process.env.MCP_READ_TOKEN = "old-read-token";
+    for (const token of ["the-one-token", "old-admin-token"])
+      expect(authorizeRequest({ headers: { authorization: `Bearer ${token}` }, url: "/mcp" }))
+        .toEqual({ ok: true, scope: "admin" });
+    expect(authorizeRequest({ headers: { authorization: "Bearer old-read-token" }, url: "/mcp" }))
+      .toEqual({ ok: true, scope: "read" });
+  });
+
   it("fails closed when no server token is configured", () => {
+    delete process.env.MCP_TOKEN;
     delete process.env.MCP_ACCESS_TOKEN;
     delete process.env.MCP_READ_TOKEN;
     expect(authorizeRequest({ headers: {}, url: "/mcp" })).toEqual(

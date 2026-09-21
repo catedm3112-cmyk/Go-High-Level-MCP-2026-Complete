@@ -6,6 +6,26 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and [Sem
 
 ---
 
+## [2.3.0] — 2026-09-21 (hosted bridge)
+
+### Added
+- **Per-sub-account keys:** `GHL_KEY_<locationId>=<pit>` — one env var per sub-account. Works together with
+  `GHL_LOCATION_KEYS`; the legacy `GHL_API_KEY` + `GHL_LOCATION_ID` pair now counts as one key, so a
+  single-location deployment becomes multi-location by adding one variable.
+- **`MCP_TOKEN`:** the single bearer for every client. `MCP_ACCESS_TOKEN`, `MCP_READ_TOKEN` and
+  `MCP_READ_TOKEN_SCOPE` remain accepted for one release.
+
+### Fixed
+- Calls that omitted `locationId` broke every tool whose schema requires it (`get_location`,
+  `get_location_custom_values`, `get_location_custom_fields`, `get_location_tags`, …): the bridge stripped
+  the argument and the request reached GHL as `/locations/undefined` → 401. Reads now fall back to the
+  default sub-account; writes that require `locationId` ask for it explicitly.
+
+### Docs
+- Agency mode marked dormant: GoHighLevel does not offer `oauth.write` on Private Integrations.
+
+---
+
 ## [1.0.0] — 2026-01-15
 
 ### Added — 520+ Tools across 40 categories

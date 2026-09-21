@@ -43,9 +43,12 @@ function isReadOnlyTool(name) {
 }
 
 function authorizeRequest(req) {
-  const admin = process.env.MCP_ACCESS_TOKEN || "";
+  // MCP_TOKEN is the one bearer every client presents (v2.3). MCP_ACCESS_TOKEN is
+  // its pre-2.3 name and stays accepted so a deployment can switch without downtime.
+  const admins = [process.env.MCP_TOKEN, process.env.MCP_ACCESS_TOKEN].filter(Boolean);
+  // Optional second token for a client that must not write.
   const read = process.env.MCP_READ_TOKEN || "";
-  if (!admin && !read) {
+  if (!admins.length && !read) {
     return {
       ok: false,
       status: 503,
@@ -54,7 +57,9 @@ function authorizeRequest(req) {
   }
 
   const presented = requestToken(req);
-  if (admin && safeTokenEqual(presented, admin)) return { ok: true, scope: "admin" };
+  // Compare against every configured token (no early exit) to keep timing flat.
+  const isAdmin = admins.map((token) => safeTokenEqual(presented, token)).some(Boolean);
+  if (isAdmin) return { ok: true, scope: "admin" };
   // MCP_READ_TOKEN_SCOPE=admin promotes the read token to full scope (owner decision
   // 2026-09-04: every Claude surface needs write access). Unset or "read" keeps the split.
   const readScope = process.env.MCP_READ_TOKEN_SCOPE === "admin" ? "admin" : "read";

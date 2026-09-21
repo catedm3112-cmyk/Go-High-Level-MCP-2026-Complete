@@ -1,11 +1,11 @@
-// GHL MCP Server v2.2 — 552 tools via TypeScript ToolRegistry, every sub-account
+// GHL MCP Server v2.3 — 552 tools via TypeScript ToolRegistry, every sub-account
 // behind one URL (see api/locations.js for the credential modes).
 // Handles: /mcp (Streamable HTTP), /sse (SSE transport), /mcp-full (alias)
 //
 // /mcp-legacy and /sse-legacy still route to api/index.js for rollback.
 
 const MCP_PROTOCOL_VERSION = "2024-11-05";
-const SERVER_INFO = { name: "ghl-mcp-server", version: "2.2.0" };
+const SERVER_INFO = { name: "ghl-mcp-server", version: "2.3.0" };
 const {
   authorizeRequest,
   isReadOnlyTool,
@@ -149,6 +149,23 @@ async function listToolDefinitions(registry, filter) {
   return [LIST_LOCATIONS_TOOL, ...defs].map(t => withLocationArg(t, description));
 }
 
+// Tools whose own schema marks `locationId` as required (get_location,
+// get_location_custom_values, ...) have no built-in default, so a call that omits
+// it used to reach GHL as /locations/undefined → 401.
+const _requiresLocation = new WeakMap(); // registry → Set<toolName>
+function requiresLocationId(registry, name) {
+  let names = _requiresLocation.get(registry);
+  if (!names) {
+    names = new Set(
+      registry.getAllToolDefinitions([])
+        .filter(t => (t.inputSchema?.required || []).includes("locationId"))
+        .map(t => t.name)
+    );
+    _requiresLocation.set(registry, names);
+  }
+  return names.has(name);
+}
+
 async function callListLocations() {
   const list = await locations.listLocations();
   const def = locations.defaultLocationId;
@@ -209,10 +226,22 @@ async function processMessage(msg, scope = "admin", toolFilter = null) {
         const callArgs = { ...(args || {}) };
         const targetLocation = await locations.resolveLocationId(callArgs.locationId);
         const registry = await getRegistry(targetLocation);
-        // Normalise a name ("TruTerra") to the id the API expects; leave it out
-        // entirely when the caller didn't ask, so each tool's own default applies.
+        // Normalise a name ("TruTerra") to the id the API expects. When the caller
+        // didn't ask, leave it out so each tool's own default applies — except for
+        // tools that require it: reads fall back to the default sub-account, writes
+        // must name theirs (a sub-account-level change never lands somewhere by default).
         if (callArgs.locationId) callArgs.locationId = targetLocation;
-        else delete callArgs.locationId;
+        else {
+          delete callArgs.locationId;
+          if (requiresLocationId(registry, name)) {
+            if (!isReadOnlyTool(name))
+              return rpc(msg.id, {
+                content: [{ type: "text", text: `Error: ${name} changes sub-account-level data — pass locationId explicitly (see list_locations).` }],
+                isError: true,
+              });
+            callArgs.locationId = targetLocation;
+          }
+        }
         let result = await registry.callTool(name, callArgs);
         if (result === undefined)
           return rpc(msg.id, null, { code: -32601, message: `Tool not found: ${name}` });
