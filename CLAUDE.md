@@ -10,7 +10,7 @@ everything to `api/mcp-full.js` (`/mcp` = full tool set, `/mcp-gpt` = 128 schema
 ChatGPT/Codex, `/health`), and `/mcp-legacy` to `api/index.js`. Tools come from the TypeScript
 `ToolRegistry` in `src/` (built by `tsc` on deploy). Pushing to `main` deploys production.
 
-## Single-bridge model (since v2.3.0, 2026-09-21)
+## Single-bridge model (since v2.3.0, 2026-09-21; current v2.3.4)
 One deployment, one URL, one token, every sub-account:
 
 - **Credentials = keys mode.** One Private Integration per sub-account, one env var each:
@@ -30,6 +30,14 @@ One deployment, one URL, one token, every sub-account:
 Details: `docs/MULTI-LOCATION.md`, `api/locations.js`, `api/auth.js`.
 
 ## Working rules
+- **Every tool module must use the registry's per-location `GHLApiClient`** (`new XTools(ghl)` in
+  `src/tool-registry.ts`). Anything under `src/tools` or `src/clients` that reads `process.env.GHL_*` — or builds
+  its own client from env — acts in the default sub-account whatever `locationId` was passed: a cross-sub-account
+  bug in keys mode (that was v2.3.3's fix for the workflow-builder module). New module ⇒ add it to the routing
+  test pattern in `tests/workflow-builder-routing.test.ts`.
+- With Private Integration keys GoHighLevel's public API can only **list** workflows. Read-one / create / update /
+  publish / clone / delete live on the internal API (user token) — on a hosted, key-only deployment those tools
+  answer "not available on this server" by design (v2.3.4).
 - Commit as the Vercel team email (repo-local `user.email` is already set) — other authors make Vercel
   reject the deployment.
 - Before pushing: `npx jest tests/mcp-auth.test.ts tests/locations.test.ts tests/confirmed-execution.test.ts --coverage=false`.
