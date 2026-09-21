@@ -6,6 +6,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and [Sem
 
 ---
 
+## [2.3.2] — 2026-09-21 (hosted bridge)
+
+### Added
+- MCP **tool annotations** on every tool (`readOnlyHint`, `destructiveHint`, `openWorldHint`). Clients stop treating
+  lookups as destructive writes: ChatGPT no longer asks for confirmation on reads, claude.ai can allow read-only
+  tools separately. Conservative: `crm_prepare_*` counts as a write; only create/add/send-style tools are non-destructive.
+- Protocol revision `2025-11-25` (what ChatGPT requests) is answered as such.
+
+---
+
 ## [2.3.1] — 2026-09-21 (hosted bridge)
 
 ### Fixed

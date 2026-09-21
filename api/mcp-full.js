@@ -8,11 +8,11 @@ const MCP_PROTOCOL_VERSION = "2024-11-05";
 // This server only does request → JSON response for tools, which is valid in every
 // revision below, so it answers with the revision the client asked for (the spec
 // requires that when it is supported); unknown revisions get the newest one we know.
-const SUPPORTED_PROTOCOL_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"];
+const SUPPORTED_PROTOCOL_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
 function negotiateProtocolVersion(requested) {
   return SUPPORTED_PROTOCOL_VERSIONS.includes(requested) ? requested : SUPPORTED_PROTOCOL_VERSIONS[0];
 }
-const SERVER_INFO = { name: "ghl-mcp-server", version: "2.3.1" };
+const SERVER_INFO = { name: "ghl-mcp-server", version: "2.3.2" };
 const {
   authorizeRequest,
   isReadOnlyTool,
@@ -173,6 +173,27 @@ function requiresLocationId(registry, name) {
   return names.has(name);
 }
 
+// MCP tool annotations. Without them clients assume every tool writes and destroys:
+// ChatGPT badges a contact search "DESTRUCTIVE" and asks for confirmation on each read;
+// claude.ai cannot offer "allow read-only tools". Conservative on purpose — anything not
+// clearly a read stays a write, and crm_prepare_* can execute when confirmed, so it is a write.
+const ADDITIVE_WRITE = /^(create_|add_|send_|start_|enroll_|upload_|ghl_create_|ghl_add_|reply_to_)/;
+const REACHES_PEOPLE = /^(send_|reply_to_|create_social_post|add_outbound_call|start_campaign|resume_campaign|add_contact_to_campaign|add_contact_to_workflow|ghl_trigger_workflow)/;
+// `declared` = what the ToolRegistry inferred (title, idempotentHint, ...). It is kept, but the
+// safety-relevant hints are decided here: read-only follows the same reviewed list that enforces
+// the read scope (api/auth.js), and "destructive" is true if either side says so.
+function toolAnnotations(name, declared = {}) {
+  const readOnly = (isReadOnlyTool(name) && !/^crm_prepare_/.test(name)) || name === LIST_LOCATIONS_TOOL.name;
+  if (readOnly)
+    return { ...declared, readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
+  return {
+    ...declared,
+    readOnlyHint: false,
+    destructiveHint: !ADDITIVE_WRITE.test(name) || declared.destructiveHint === true,
+    openWorldHint: REACHES_PEOPLE.test(name),
+  };
+}
+
 async function callListLocations() {
   const list = await locations.listLocations();
   const def = locations.defaultLocationId;
@@ -214,6 +235,7 @@ async function processMessage(msg, scope = "admin", toolFilter = null) {
           name: t.name,
           description: t.description || "",
           inputSchema: t.inputSchema || { type: "object", properties: {} },
+          annotations: toolAnnotations(t.name, t.annotations),
         })),
       });
     }
