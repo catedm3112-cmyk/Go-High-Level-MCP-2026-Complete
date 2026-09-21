@@ -663,6 +663,11 @@ export class WorkflowBuilderClient {
   /**
    * Get location ID being used.
    */
+  /** True when only a Private Integration key is available (no user JWT / Firebase login). */
+  isPublicApiMode(): boolean {
+    return this.config.publicApiMode === true;
+  }
+
   getLocationId(): string {
     return this.config.locationId;
   }

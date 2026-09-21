@@ -6,6 +6,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and [Sem
 
 ---
 
+## [2.3.4] — 2026-09-21 (hosted bridge)
+
+### Changed
+- With Private Integration keys only (every hosted deployment), `ghl_get_workflow_full`, `ghl_create_workflow`,
+  `ghl_update_workflow_actions`, `ghl_publish_workflow`, `ghl_clone_workflow` and `ghl_delete_workflow` now answer
+  with a clear "not available on this server" message and send nothing. GoHighLevel's public API has exactly one
+  workflow endpoint (`GET /workflows/`); the rest exist only on the internal API (logged-in user token) and the
+  public API answered them with a bare `404 Cannot GET /workflows/<id>`, which read like a routing problem.
+  `ghl_list_workflows_full` keeps working through the public list. With a user token configured (stdio use) the
+  tools behave as before, bound to their sub-account (v2.3.3).
+
+---
+
 ## [2.3.3] — 2026-09-21 (hosted bridge) — SECURITY: cross-sub-account routing
 
 ### Fixed

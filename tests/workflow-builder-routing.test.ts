@@ -19,13 +19,14 @@ function mockFetch(sent: Sent[]) {
       url: String(url),
       method: init.method || 'GET',
       auth: String(init.headers?.Authorization || ''),
-      body: init.body ? JSON.parse(init.body) : undefined,
+      body: (() => { try { return init.body ? JSON.parse(init.body) : undefined; } catch { return String(init.body); } })(),
     });
     const payload = {
+      id_token: 'firebase-id-token', refresh_token: 'fb-refresh', // token refresh (internal mode)
       _id: 'wf1', id: 'wf1', name: 'wf', status: 'draft', version: 1,
       workflowData: { templates: [] }, triggers: [], workflows: [], rows: [], total: 0, count: 0,
     };
-    return { ok: true, status: 200, text: async () => JSON.stringify(payload) } as any;
+    return { ok: true, status: 200, text: async () => JSON.stringify(payload), json: async () => payload } as any;
   });
 }
 
@@ -43,14 +44,19 @@ describe('workflow-builder tools are bound to their sub-account', () => {
   const savedEnv = { ...process.env };
   const savedFetch = (global as any).fetch;
   let sent: Sent[];
+  let all: Sent[];
 
   beforeEach(() => {
     // The deployment's env still describes the DEFAULT sub-account (legacy pair).
-    process.env = { ...savedEnv, GHL_API_KEY: DEFAULT_KEY, GHL_LOCATION_ID: DEFAULT_LOC, HOME: '/nonexistent-home' };
-    for (const k of ['GHL_REFRESH_TOKEN', 'GHL_AUTH_REFRESH_TOKEN', 'GHL_FIREBASE_API_KEY', 'GHL_FIREBASE_REFRESH_TOKEN'])
-      delete process.env[k];
-    sent = [];
-    (global as any).fetch = mockFetch(sent);
+    // Internal-API mode (a user login is configured), so every tool really issues requests.
+    process.env = {
+      ...savedEnv, GHL_API_KEY: DEFAULT_KEY, GHL_LOCATION_ID: DEFAULT_LOC, HOME: '/nonexistent-home',
+      GHL_FIREBASE_API_KEY: 'fb-api-key', GHL_FIREBASE_REFRESH_TOKEN: 'fb-refresh',
+    };
+    for (const k of ['GHL_REFRESH_TOKEN', 'GHL_AUTH_REFRESH_TOKEN']) delete process.env[k];
+    all = [];
+    (global as any).fetch = mockFetch(all);
+    sent = new Proxy(all, { get: (t, p, r) => Reflect.get(t.filter(q => !q.url.includes('securetoken.googleapis.com')), p, r) }) as any;
   });
   afterEach(() => { process.env = { ...savedEnv }; (global as any).fetch = savedFetch; });
 
@@ -92,6 +98,26 @@ describe('workflow-builder tools are bound to their sub-account', () => {
     token = 'pit-rotated';
     await tools.executeWorkflowBuilderTool('ghl_list_workflows_full', {});
     expect(sent.map(r => r.auth)).toEqual([`Bearer ${OTHER_KEY}`, 'Bearer pit-rotated']);
+  });
+
+  describe('with Private Integration keys only (the hosted bridge)', () => {
+    beforeEach(() => { delete process.env.GHL_FIREBASE_API_KEY; delete process.env.GHL_FIREBASE_REFRESH_TOKEN; });
+
+    it('lists workflows for the bound sub-account through the public API', async () => {
+      const result = await boundTo(OTHER_LOC, OTHER_KEY).executeWorkflowBuilderTool('ghl_list_workflows_full', { locationId: OTHER_LOC });
+      expect(result.isError).toBeFalsy();
+      expect(all).toHaveLength(1);
+      expect(all[0].url).toBe(`https://services.leadconnectorhq.com/workflows/?locationId=${OTHER_LOC}`);
+      expect(all[0].auth).toBe(`Bearer ${OTHER_KEY}`);
+    });
+
+    it.each(CALLS.filter(([tool]) => tool !== 'ghl_list_workflows_full'))(
+      '%s explains it needs the internal API and sends nothing', async (tool, args) => {
+        const result = await boundTo(OTHER_LOC, OTHER_KEY).executeWorkflowBuilderTool(tool, { ...args, locationId: OTHER_LOC });
+        expect(result.isError).toBe(true);
+        expect(result.content[0].text).toMatch(/not available on this server/);
+        expect(all).toHaveLength(0);
+      });
   });
 
   it('has no built-in fallback sub-account when nothing is configured', async () => {

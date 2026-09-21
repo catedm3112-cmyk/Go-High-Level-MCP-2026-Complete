@@ -328,6 +328,19 @@ export class WorkflowBuilderTools {
         `bound to "${this.client.getLocationId()}". Nothing was sent to GoHighLevel.`
       );
     }
+    // With only a Private Integration key GoHighLevel's public API offers exactly one workflow
+    // endpoint: GET /workflows/ (the list). Reading one workflow, create, update, publish, clone
+    // and delete exist only on the internal API, which needs a logged-in user's token — the
+    // public API answers them with "404 Cannot GET/POST/DELETE /workflows/...". Say so up front.
+    if (this.client?.isPublicApiMode() && name !== 'ghl_list_workflows_full') {
+      return error(
+        `${name} is not available on this server: GoHighLevel only exposes it on its internal API ` +
+        `(needs a logged-in user token), and this server holds Private Integration keys only. ` +
+        `With a key, workflows can be listed (ghl_list_workflows / ghl_list_workflows_full) but not ` +
+        `read in full, created, edited, published, cloned or deleted — do that in the GoHighLevel UI ` +
+        `(Automation → Workflows). Nothing was sent to GoHighLevel.`
+      );
+    }
     if (!this.client) {
       return error(
         `Workflow tools not initialized: ${this.initError || 'Unknown error'}. ` +
