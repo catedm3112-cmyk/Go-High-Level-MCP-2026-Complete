@@ -97,7 +97,7 @@ export class WorkflowBuilderClient {
    * Create from environment variables. Reads from the workflow builder .env file
    * and falls back to process.env.
    */
-  static fromEnv(): WorkflowBuilderClient {
+  static fromEnv(overrides: { apiKey?: string; locationId?: string } = {}): WorkflowBuilderClient {
     // Try loading from the skill's .env file
     const skillEnvPath = resolve(
       process.env.HOME || '/Users/jakeshore',
@@ -121,16 +121,22 @@ export class WorkflowBuilderClient {
     // Process.env overrides
     const get = (key: string): string => process.env[key] || envVars[key] || '';
 
+    // `overrides` bind the client to one sub-account (multi-location deployments pass that
+    // location's key + id). There is deliberately no built-in fallback location or user id:
+    // a workflow call must never land in a sub-account nobody asked for.
     const config: WorkflowBuilderConfig = {
-      apiKey: get('GHL_API_KEY'),
+      apiKey: overrides.apiKey || get('GHL_API_KEY'),
       firebaseApiKey: get('GHL_FIREBASE_API_KEY'),
       firebaseRefreshToken: get('GHL_FIREBASE_REFRESH_TOKEN'),
       refreshToken: get('GHL_REFRESH_TOKEN') || get('GHL_AUTH_REFRESH_TOKEN'),
-      locationId: get('GHL_LOCATION_ID') || 'DZEpRd43MxUJKdtrev9t',
-      userId: get('GHL_USER_ID') || '8Uy3ls0B517vLO2tSNva',
+      locationId: overrides.locationId || get('GHL_LOCATION_ID'),
+      userId: get('GHL_USER_ID'),
       companyId: get('GHL_COMPANY_ID'),
       envFilePath: skillEnvPath,
     };
+    if (!config.locationId) {
+      throw new Error('Workflow tools need a locationId (none bound and GHL_LOCATION_ID is not set)');
+    }
 
     // v2 JWT refresh is preferred; fall back to Firebase; last resort: public API key mode
     if (!config.refreshToken && (!config.firebaseApiKey || !config.firebaseRefreshToken)) {

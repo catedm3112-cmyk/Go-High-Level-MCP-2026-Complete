@@ -46,17 +46,42 @@ function error(msg: string): ToolResult {
 
 // ─── Tool class ─────────────────────────────────────────────
 
+/** The slice of GHLApiClient these tools need: the credentials of the sub-account it serves. */
+export interface LocationBoundClient {
+  getConfig(): { accessToken?: string; locationId?: string };
+}
+
 export class WorkflowBuilderTools {
   private client: WorkflowBuilderClient | null = null;
+  private clientKey = '';
   private initError: string | null = null;
 
-  constructor() {
+  /**
+   * @param ghlClient the registry's GHL client. In a multi-location deployment every sub-account
+   *   has its own ToolRegistry + client, so binding to it is what routes these tools. Before
+   *   v2.3.3 this class always built its client from process.env, i.e. every call — including
+   *   writes — went to the default sub-account no matter which `locationId` was asked for.
+   *   Omit it only for single-location stdio use (falls back to env).
+   */
+  constructor(private readonly ghlClient?: LocationBoundClient) {
+    this.resolveClient();
+  }
+
+  /** (Re)build the workflow client when the bound credentials change (e.g. a rotated token). */
+  private resolveClient(): WorkflowBuilderClient | null {
+    const bound = this.ghlClient?.getConfig();
+    const key = `${bound?.locationId || ''}|${bound?.accessToken || ''}`;
+    if (this.client && key === this.clientKey) return this.client;
     try {
-      this.client = WorkflowBuilderClient.fromEnv();
+      this.client = WorkflowBuilderClient.fromEnv({ apiKey: bound?.accessToken, locationId: bound?.locationId });
+      this.clientKey = key;
+      this.initError = null;
     } catch (err: any) {
+      this.client = null;
       this.initError = err.message;
       process.stderr.write(`[WorkflowBuilderTools] Init warning: ${err.message}\n`);
     }
+    return this.client;
   }
 
   /**
@@ -293,6 +318,16 @@ export class WorkflowBuilderTools {
    * Execute a workflow builder tool by name.
    */
   async executeWorkflowBuilderTool(name: string, params: Record<string, unknown>): Promise<ToolResult> {
+    this.resolveClient();
+    // Never fall through to another sub-account: if the caller named one, it must be the one
+    // this instance is bound to (the bridge picks the registry from the same argument).
+    const requested = typeof params?.locationId === 'string' ? params.locationId.trim() : '';
+    if (requested && this.client && requested !== this.client.getLocationId()) {
+      return error(
+        `Refusing ${name}: it was asked to act in sub-account "${requested}" but this workflow client is ` +
+        `bound to "${this.client.getLocationId()}". Nothing was sent to GoHighLevel.`
+      );
+    }
     if (!this.client) {
       return error(
         `Workflow tools not initialized: ${this.initError || 'Unknown error'}. ` +

@@ -256,7 +256,7 @@ export class ToolRegistry {
     this.addModule('agentWorkspace', agentWorkspaceTools, 'getToolDefinitions', 'handleToolCall');
 
     // Workflow Builder — internal API with Firebase auth (no GHL API client dependency)
-    const workflowBuilderTools = new WorkflowBuilderTools();
+    const workflowBuilderTools = new WorkflowBuilderTools(ghl);
     this.addModule('workflowBuilder', workflowBuilderTools, 'getTools', 'executeWorkflowBuilderTool');
   }
 
@@ -277,6 +277,11 @@ export class ToolRegistry {
     try {
       const tools = getTools();
       for (const tool of tools) {
+        // A later module may redefine a name (ghl_delete_workflow exists in `workflows` and
+        // `workflowBuilder`). The later one executes, so it must also be the only one listed.
+        if (this.toolToModule.has(tool.name)) {
+          this.allToolDefs = this.allToolDefs.filter(t => t.name !== tool.name);
+        }
         this.toolToModule.set(tool.name, mod);
         this.allToolDefs.push(tool);
       }

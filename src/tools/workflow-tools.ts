@@ -283,14 +283,28 @@ export class WorkflowTools {
   }
 
   private async listWorkflows(params: any): Promise<any> {
+    // GET /workflows/ accepts locationId only — GHL answers 422 "property limit should not exist"
+    // for anything else — so status / limit / skip are applied to the result here.
     const locationId = this.locationId(params);
-    const qp = new URLSearchParams();
-    if (locationId) qp.append('locationId', locationId);
-    if (params.status) qp.append('status', params.status);
-    if (params.limit) qp.append('limit', String(params.limit));
-    if (params.skip) qp.append('skip', String(params.skip));
-    const qs = qp.toString();
-    return (this.apiClient as any).makeRequest('GET', `/workflows/${qs ? `?${qs}` : ''}`);
+    const qs = locationId ? `?locationId=${encodeURIComponent(locationId)}` : '';
+    const result = await (this.apiClient as any).makeRequest('GET', `/workflows/${qs}`);
+
+    const data = result?.data ?? result;
+    if (!Array.isArray(data?.workflows)) return result;
+    const wanted = params.status ? String(params.status).toLowerCase() : '';
+    const matches = (w: any): boolean => {
+      const status = String(w?.status || '').toLowerCase();
+      if (!wanted) return true;
+      if (wanted === 'active') return status === 'published' || status === 'active';
+      if (wanted === 'inactive') return status !== 'published' && status !== 'active';
+      return status === wanted;
+    };
+    const filtered = data.workflows.filter(matches);
+    const skip = Math.max(0, Number(params.skip) || 0);
+    const limit = Number(params.limit) > 0 ? Number(params.limit) : filtered.length;
+    const page = filtered.slice(skip, skip + limit);
+    const shaped = { ...data, workflows: page, total: filtered.length, returned: page.length };
+    return result?.data ? { ...result, data: shaped } : shaped;
   }
 
   private async getWorkflowById(params: any): Promise<any> {

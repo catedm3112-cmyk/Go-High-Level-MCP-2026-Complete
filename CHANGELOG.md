@@ -6,6 +6,27 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and [Sem
 
 ---
 
+## [2.3.3] — 2026-09-21 (hosted bridge) — SECURITY: cross-sub-account routing
+
+### Fixed
+- **Workflow-builder tools ignored `locationId`.** `ghl_create_workflow`, `ghl_list_workflows_full`,
+  `ghl_get_workflow_full`, `ghl_update_workflow_actions`, `ghl_publish_workflow`, `ghl_clone_workflow` and
+  `ghl_delete_workflow` built their client from `process.env` (`GHL_API_KEY` + `GHL_LOCATION_ID`) instead of the
+  registry's per-sub-account client, so in a multi-location deployment every call — writes included — went to the
+  **default** sub-account. They are now bound to the sub-account of the registry that owns them, follow a rotated
+  key without a restart, and **refuse** (nothing sent) if asked to act in a sub-account they are not bound to.
+- Removed the hard-coded fallback location/user ids in `WorkflowBuilderClient.fromEnv()` (a third party's
+  sub-account): with no location configured the tools now fail instead of guessing.
+- `ghl_delete_workflow` was defined by two modules and listed twice; the executing definition is the only one listed.
+- `ghl_list_workflows`: GHL's `GET /workflows/` accepts `locationId` only (422 "property limit should not exist");
+  `status` / `limit` / `skip` are now applied to the result locally.
+
+### Tests
+- `tests/workflow-builder-routing.test.ts`: every builder tool × (explicit id, no id, mismatched id), rotated key,
+  no-fallback, and the `ghl_list_workflows` query.
+
+---
+
 ## [2.3.2] — 2026-09-21 (hosted bridge)
 
 ### Added

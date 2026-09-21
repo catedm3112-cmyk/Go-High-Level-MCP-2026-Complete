@@ -12,7 +12,7 @@ const SUPPORTED_PROTOCOL_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26", "
 function negotiateProtocolVersion(requested) {
   return SUPPORTED_PROTOCOL_VERSIONS.includes(requested) ? requested : SUPPORTED_PROTOCOL_VERSIONS[0];
 }
-const SERVER_INFO = { name: "ghl-mcp-server", version: "2.3.2" };
+const SERVER_INFO = { name: "ghl-mcp-server", version: "2.3.3" };
 const {
   authorizeRequest,
   isReadOnlyTool,
