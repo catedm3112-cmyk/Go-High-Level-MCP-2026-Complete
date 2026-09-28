@@ -10,7 +10,7 @@ everything to `api/mcp-full.js` (`/mcp` = full tool set, `/mcp-gpt` = 128 schema
 ChatGPT/Codex, `/health`), and `/mcp-legacy` to `api/index.js`. Tools come from the TypeScript
 `ToolRegistry` in `src/` (built by `tsc` on deploy). Pushing to `main` deploys production.
 
-## Single-bridge model (since v2.3.0, 2026-09-21; current v2.3.4)
+## Single-bridge model (since v2.3.0, 2026-09-21; current v2.3.5)
 One deployment, one URL, one token, every sub-account:
 
 - **Credentials = keys mode.** One Private Integration per sub-account, one env var each:

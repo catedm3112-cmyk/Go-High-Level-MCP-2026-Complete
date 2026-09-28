@@ -172,6 +172,23 @@ export class VoiceAITools {
             timezone: {
               type: 'string',
               description: 'Timezone for agent working hours'
+            },
+            patienceLevel: {
+              type: 'string',
+              description: 'Agent patience level setting'
+            },
+            sendUserIdleReminders: {
+              type: 'boolean',
+              description: 'Whether the agent prompts the caller after a period of silence'
+            },
+            reminderAfterIdleTimeSeconds: {
+              type: 'number',
+              description: 'Seconds of caller silence before an idle reminder (when sendUserIdleReminders is true)'
+            },
+            callEndWorkflowIds: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Workflow IDs to run after each call ends (post-call workflows). Replaces the current list.'
             }
           },
           required: ['agentId']
@@ -462,7 +479,9 @@ export class VoiceAITools {
 
       case 'update_voice_ai_agent': {
         const agentId = args.agentId as string;
-        const body: Record<string, unknown> = { locationId };
+        // PATCH takes locationId as a query param only; in the body GHL answers
+        // 422 "property locationId should not exist".
+        const body: Record<string, unknown> = {};
         const fields = [
           'agentName', 'businessName', 'welcomeMessage', 'agentPrompt',
           'voiceId', 'language', 'patienceLevel', 'maxCallDuration',

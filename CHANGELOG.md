@@ -6,6 +6,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and [Sem
 
 ---
 
+## [2.3.5] — 2026-09-28 (hosted bridge)
+
+### Fixed
+- `update_voice_ai_agent` no longer sends `locationId` in the `PATCH /voice-ai/agents/{agentId}` body — GoHighLevel
+  takes it as a query param only and answered every update with `422 property locationId should not exist`.
+
+### Added
+- `update_voice_ai_agent` schema now exposes `sendUserIdleReminders`, `reminderAfterIdleTimeSeconds`,
+  `callEndWorkflowIds` (post-call workflows) and `patienceLevel`; the handler already forwarded them, but clients
+  could not send what the schema did not declare.
+
+---
+
 ## [2.3.4] — 2026-09-21 (hosted bridge)
 
 ### Changed
