@@ -57,7 +57,7 @@ export class FunnelsTools {
       },
       {
         name: 'get_funnel',
-        description: 'Get a specific funnel by ID with all its pages',
+        description: 'Find a funnel or website by ID, including its step and page IDs. Use get_funnel_pages for the page records.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -291,29 +291,43 @@ export class FunnelsTools {
       case 'get_funnels': {
         const params = new URLSearchParams();
         params.append('locationId', locationId);
-        if (args.skip) params.append('skip', String(args.skip));
+        if (args.skip !== undefined) params.append('offset', String(args.skip));
         if (args.limit) params.append('limit', String(args.limit));
         if (args.name) params.append('name', String(args.name));
         if (args.category) params.append('category', String(args.category));
         if (args.parentId) params.append('parentId', String(args.parentId));
         if (args.type) params.append('type', String(args.type));
         
-        return this.ghlClient.makeRequest('GET', `/funnels/?${params.toString()}`);
+        return this.ghlClient.makeRequest('GET', `/funnels/funnel/list?${params.toString()}`);
       }
 
       case 'get_funnel': {
         const funnelId = args.funnelId as string;
-        return this.ghlClient.makeRequest('GET', `/funnels/${funnelId}?locationId=${locationId}`);
+        // The public API has no GET /funnels/{id}. Look up the resource in its
+        // location's inventory without assuming it is on the first page.
+        for (let offset = 0; ; offset += 100) {
+          const params = new URLSearchParams({ locationId, offset: String(offset), limit: '100' });
+          const result = await this.ghlClient.makeRequest<any>('GET', `/funnels/funnel/list?${params}`);
+          const data = result.data;
+          if (!result.success || !data) return result;
+          const funnels = Array.isArray(data.funnels) ? data.funnels : data.funnels?._id ? [data.funnels] : null;
+          if (!funnels) throw new Error('Funnels API returned an invalid inventory response');
+          const funnel = funnels.find((item: any) => (item._id || item.id) === funnelId);
+          if (funnel) return { ...result, data: { funnel, traceId: data.traceId } };
+          if (funnels.length < 100 || (Number.isFinite(data.count) && offset + funnels.length >= data.count)) break;
+        }
+        throw new Error('Funnel or website was not found in the requested location');
       }
 
       case 'get_funnel_pages': {
         const funnelId = args.funnelId as string;
         const params = new URLSearchParams();
         params.append('locationId', locationId);
-        if (args.skip) params.append('skip', String(args.skip));
-        if (args.limit) params.append('limit', String(args.limit));
+        params.append('funnelId', funnelId);
+        params.append('offset', String(args.skip ?? 0));
+        params.append('limit', String(args.limit ?? 10));
         
-        return this.ghlClient.makeRequest('GET', `/funnels/${funnelId}/pages?${params.toString()}`);
+        return this.ghlClient.makeRequest('GET', `/funnels/page?${params.toString()}`);
       }
 
       case 'count_funnel_pages': {

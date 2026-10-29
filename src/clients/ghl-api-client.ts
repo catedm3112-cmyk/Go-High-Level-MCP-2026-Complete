@@ -1559,6 +1559,40 @@ export class GHLApiClient {
   }
 
   /**
+   * List active phone numbers. Phone System uses the v3 contract, independently
+   * of the version configured for contacts/workflows. Never change shared headers.
+   */
+  async getActivePhoneNumbers(locationId = this.config.locationId, limit = 50, skip = 0): Promise<GHLApiResponse<any>> {
+    if (!locationId) throw new Error('locationId is required to list phone numbers');
+    if (!Number.isInteger(limit) || limit < 1 || limit > 1000 ||
+        !Number.isInteger(skip) || skip < 0) {
+      throw new Error('Phone number limit must be an integer from 1 to 1000; skip must be a non-negative integer');
+    }
+    const pageSize = limit;
+    let page = Math.floor(skip / pageSize);
+    const offset = skip % pageSize;
+    const numbers: any[] = [];
+    let payload: any;
+    do {
+      const query = new URLSearchParams({ pageSize: String(pageSize), page: String(page) });
+      const response = await this.axiosInstance.get(
+        `/phone-system/numbers/location/${encodeURIComponent(locationId)}?${query}`,
+        { headers: { Version: 'v3' } }
+      );
+      payload = response.data;
+      const batch = payload?.data?.numbers;
+      if (!Array.isArray(batch)) throw new Error('Phone System returned an invalid v3 numbers response');
+      numbers.push(...batch);
+      if (batch.length < pageSize || numbers.length >= offset + limit) break;
+      page++;
+    } while (true);
+    return this.wrapResponse({
+      ...payload,
+      data: { ...payload.data, numbers: numbers.slice(offset, offset + limit), limit, skip },
+    });
+  }
+
+  /**
    * Generic request method for new endpoints
    * Used by new tool modules that don't have specific client methods yet
    */
@@ -6878,4 +6912,4 @@ export class GHLApiClient {
       throw error;
     }
   }
-} 
+}
