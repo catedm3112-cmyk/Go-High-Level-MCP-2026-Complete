@@ -34,7 +34,7 @@ export class WorkflowTools {
       // ─── New Workflow Tools ───────────────────────────────────────────────
       {
         name: 'ghl_list_workflows',
-        description: 'List all workflows in a location with status, trigger type, and step counts. Alias for ghl_get_workflows with additional filter options.',
+        description: 'List workflow names, IDs, and statuses for a location, with local filtering and pagination. The public API does not return workflow steps or triggers.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -64,7 +64,7 @@ export class WorkflowTools {
       },
       {
         name: 'ghl_get_workflow',
-        description: 'Get full details for a specific workflow by ID, including all triggers, actions/steps, and configuration.',
+        description: 'Unavailable through the public API: full workflow details require GHL internal API access. Use ghl_list_workflows for IDs and statuses, or Automation → Workflows in GoHighLevel for steps.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -308,9 +308,14 @@ export class WorkflowTools {
   }
 
   private async getWorkflowById(params: any): Promise<any> {
-    const locationId = this.locationId(params);
-    const qs = locationId ? `?locationId=${encodeURIComponent(locationId)}` : '';
-    return (this.apiClient as any).makeRequest('GET', `/workflows/${params.workflowId}${qs}`);
+    // GHLApiClient uses the public API, which only provides the workflow list.
+    // The builder module separately handles authenticated internal API access.
+    throw new Error(
+      'ghl_get_workflow is not available through the GoHighLevel public API. ' +
+      'Private Integration keys can list workflows with ghl_list_workflows, but full steps and triggers ' +
+      'require the internal API (ghl_get_workflow_full with a configured user session), or the ' +
+      'GoHighLevel UI (Automation → Workflows). Nothing was sent to GoHighLevel.'
+    );
   }
 
   private async updateWorkflowStatus(params: any): Promise<any> {
@@ -363,4 +368,4 @@ export function isWorkflowTool(toolName: string): boolean {
   ];
   
   return workflowToolNames.includes(toolName);
-} 
+}

@@ -291,14 +291,15 @@ export class FunnelsTools {
       case 'get_funnels': {
         const params = new URLSearchParams();
         params.append('locationId', locationId);
-        if (args.skip) params.append('skip', String(args.skip));
+        // The MCP argument remains skip for compatibility; GHL calls it offset.
+        if (args.skip !== undefined) params.append('offset', String(args.skip));
         if (args.limit) params.append('limit', String(args.limit));
         if (args.name) params.append('name', String(args.name));
         if (args.category) params.append('category', String(args.category));
         if (args.parentId) params.append('parentId', String(args.parentId));
         if (args.type) params.append('type', String(args.type));
         
-        return this.ghlClient.makeRequest('GET', `/funnels/?${params.toString()}`);
+        return this.ghlClient.makeRequest('GET', `/funnels/funnel/list?${params.toString()}`);
       }
 
       case 'get_funnel': {

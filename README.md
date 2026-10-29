@@ -376,7 +376,7 @@ This comprehensive MCP (Model Context Protocol) server connects Claude Desktop d
 
 ### ⚡ Workflow Management (8 Tools)
 - `ghl_get_workflows`, `ghl_list_workflows` - Workflow discovery & filtering
-- `ghl_get_workflow` - Full workflow details
+- `ghl_get_workflow` - Explains the public API limitation; full details require the internal API or the GoHighLevel UI
 - `ghl_update_workflow_status` - Enable/disable workflows
 - `ghl_delete_workflow` - Delete a workflow
 - `ghl_trigger_workflow` - Manually enroll a contact into a workflow
