@@ -448,7 +448,7 @@ export class PhoneSystemTools {
       }
 
       case 'list_active_numbers_by_location': {
-        return this.ghlClient.makeRequest('GET', `/phone-system/numbers/location/${locationId}`);
+        return this.ghlClient.getActivePhoneNumbers(locationId);
       }
 
       // ─── Number Search & Purchase ────────────────────────────────────────
@@ -483,12 +483,7 @@ export class PhoneSystemTools {
       }
 
       case 'ghl_list_phone_numbers': {
-        const params = new URLSearchParams();
-        if (locationId) params.append('locationId', locationId);
-        if (args.limit) params.append('limit', String(args.limit));
-        if (args.skip) params.append('skip', String(args.skip));
-        const qs = params.toString();
-        return this.ghlClient.makeRequest('GET', `/phone-system/numbers${qs ? `?${qs}` : ''}`);
+        return this.ghlClient.getActivePhoneNumbers(locationId, args.limit as number | undefined, args.skip as number | undefined);
       }
 
       case 'ghl_update_phone_number': {

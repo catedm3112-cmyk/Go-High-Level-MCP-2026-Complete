@@ -6,6 +6,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and [Sem
 
 ---
 
+## [2.3.6] — 2026-10-29 (hosted bridge)
+
+### Fixed
+- Phone inventory uses the documented location endpoint and a request-scoped `v3` header; all three inventory aliases share the same client and preserve pagination.
+- Funnel and website inventory uses `/funnels/funnel/list`, translates `skip` to `offset`, and retrieves pages through `/funnels/page` with required pagination. Single-funnel lookup searches the location inventory.
+- Legacy workflow tools explain the public API limitation without sending unsupported detail, status or execution-history requests. Contact enrollment uses the supported contact workflow endpoint.
+
+### Validation
+- TypeScript compilation and targeted regression tests cover routes, pagination, authentication and subaccount routing. Full workflow editing still requires the GoHighLevel UI or an appropriately authenticated internal API client.
+
+---
+
 ## [2.3.5] — 2026-09-28 (hosted bridge)
 
 ### Fixed
