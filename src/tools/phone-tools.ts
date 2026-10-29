@@ -13,7 +13,7 @@ export class PhoneTools {
       // Phone Numbers
       {
         name: 'get_phone_numbers',
-        description: 'Get all phone numbers for a location',
+        description: 'List active phone numbers for a location using the public phone-system API. Requires phonenumbers.read. The v3 payload includes pagination.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -435,7 +435,7 @@ export class PhoneTools {
     switch (toolName) {
       // Phone Numbers
       case 'get_phone_numbers': {
-        return this.ghlClient.makeRequest('GET', `/phone-numbers/?locationId=${locationId}`);
+        return this.ghlClient.makeRequest('GET', `/phone-system/numbers/location/${encodeURIComponent(locationId)}`, undefined, { version: 'v3' });
       }
       case 'get_phone_number': {
         return this.ghlClient.makeRequest('GET', `/phone-numbers/${args.phoneNumberId}?locationId=${locationId}`);

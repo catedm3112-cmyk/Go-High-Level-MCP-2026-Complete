@@ -1562,24 +1562,27 @@ export class GHLApiClient {
    * Generic request method for new endpoints
    * Used by new tool modules that don't have specific client methods yet
    */
-  async makeRequest<T = any>(method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string, body?: Record<string, unknown>): Promise<GHLApiResponse<T>> {
+  async makeRequest<T = any>(method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string, body?: Record<string, unknown>, options?: { version: string }): Promise<GHLApiResponse<T>> {
     try {
+      // Some API families require their own version. Keep this per request so
+      // a phone lookup cannot change the version used by subsequent CRM calls.
+      const requestConfig = options ? { headers: { Version: options.version } } : undefined;
       let response;
       switch (method) {
         case 'GET':
-          response = await this.axiosInstance.get(path);
+          response = options ? await this.axiosInstance.get(path, requestConfig) : await this.axiosInstance.get(path);
           break;
         case 'POST':
-          response = await this.axiosInstance.post(path, body);
+          response = options ? await this.axiosInstance.post(path, body, requestConfig) : await this.axiosInstance.post(path, body);
           break;
         case 'PUT':
-          response = await this.axiosInstance.put(path, body);
+          response = options ? await this.axiosInstance.put(path, body, requestConfig) : await this.axiosInstance.put(path, body);
           break;
         case 'PATCH':
-          response = await this.axiosInstance.patch(path, body);
+          response = options ? await this.axiosInstance.patch(path, body, requestConfig) : await this.axiosInstance.patch(path, body);
           break;
         case 'DELETE':
-          response = await this.axiosInstance.delete(path);
+          response = options ? await this.axiosInstance.delete(path, requestConfig) : await this.axiosInstance.delete(path);
           break;
       }
       return this.wrapResponse(response.data);
@@ -6878,4 +6881,4 @@ export class GHLApiClient {
       throw error;
     }
   }
-} 
+}

@@ -448,7 +448,7 @@ export class PhoneSystemTools {
       }
 
       case 'list_active_numbers_by_location': {
-        return this.ghlClient.makeRequest('GET', `/phone-system/numbers/location/${locationId}`);
+        return this.ghlClient.makeRequest('GET', `/phone-system/numbers/location/${encodeURIComponent(locationId)}`, undefined, { version: 'v3' });
       }
 
       // ─── Number Search & Purchase ────────────────────────────────────────
