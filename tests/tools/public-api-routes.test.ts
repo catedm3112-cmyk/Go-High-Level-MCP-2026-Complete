@@ -4,19 +4,23 @@ import { PhoneTools } from '../../src/tools/phone-tools';
 import { PhoneSystemTools } from '../../src/tools/phone-system-tools';
 import { FunnelsTools } from '../../src/tools/funnels-tools';
 import { WorkflowTools } from '../../src/tools/workflow-tools';
+import { UsersTools } from '../../src/tools/users-tools';
+import { TemplatesTools } from '../../src/tools/templates-tools';
 
 describe('public API routes', () => {
   let client: GHLApiClient;
   let requests: InternalAxiosRequestConfig[];
+  let responseData: Record<string, any>;
 
   beforeEach(() => {
     requests = [];
+    responseData = { numbers: [], funnels: [], workflows: [] };
     const create = axios.create.bind(axios);
     jest.spyOn(axios, 'create').mockImplementation(config => create({
       ...config,
       adapter: async request => {
         requests.push(request);
-        return { data: { numbers: [], funnels: [], workflows: [] }, status: 200,
+        return { data: responseData, status: 200,
           statusText: 'OK', headers: {}, config: request };
       },
     }));
@@ -70,5 +74,42 @@ describe('public API routes', () => {
   it('continues to list workflows through the public API', async () => {
     await new WorkflowTools(client).executeWorkflowTool('ghl_list_workflows', {});
     expect(requests[0].url).toBe('/workflows/?locationId=locBound');
+  });
+
+  it('sends only locationId for users and applies role, type, IDs, sorting and pagination locally', async () => {
+    responseData = { users: [
+      { id: 'u1', name: 'Zoe', roles: { type: 'account', role: 'admin' } },
+      { id: 'u2', name: 'Amy', roles: { type: 'account', role: 'admin' } },
+      { id: 'u3', name: 'Bob', roles: { type: 'account', role: 'user' } },
+      { id: 'u4', name: 'Dan', roles: { type: 'agency', role: 'admin' } },
+      { id: 'u5', name: 'Kim', roles: { type: 'account', role: 'admin' } },
+    ], traceId: 'trace' };
+    const out: any = await new UsersTools(client).handleToolCall('get_users', {
+      locationId: 'locOther', ids: 'u1, u2,u3,u4', role: 'admin', type: 'account',
+      sort: 'name', sortDirection: 'asc', skip: 1, limit: 1,
+    });
+    expect(requests[0].url).toBe('/users/?locationId=locOther');
+    expect(out.data.users.map((u: any) => u.id)).toEqual(['u1']);
+    expect(out.data).toMatchObject({ total: 2, returned: 1, traceId: 'trace' });
+  });
+
+  it('preserves all location users when filters are omitted', async () => {
+    responseData = { users: [{ id: 'u1' }, { id: 'u2' }] };
+    const out: any = await new UsersTools(client).handleToolCall('get_users', {});
+    expect(requests[0].url).toBe('/users/?locationId=locBound');
+    expect(out.data.users).toEqual(responseData.users);
+  });
+
+  it.each(['all', 'sms', 'email'])('loads %s snippets through location templates', async type => {
+    responseData = { templates: [{ id: 't1', type: 'sms' }], totalCount: 3 };
+    const out: any = await new TemplatesTools(client).handleToolCall('get_snippets', {
+      locationId: 'locOther', type, skip: 1, limit: 2,
+    });
+    expect(requests[0].url).toBe('/locations/locOther/templates');
+    expect(requests[0].params).toEqual({
+      originId: '', deleted: false, skip: 1, limit: 2,
+      ...(type === 'all' ? {} : { type }),
+    });
+    expect(out.data).toMatchObject({ snippets: responseData.templates, totalCount: 3 });
   });
 });
