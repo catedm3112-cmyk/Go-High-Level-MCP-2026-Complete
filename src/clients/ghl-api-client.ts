@@ -1569,49 +1569,43 @@ export class GHLApiClient {
   async getActivePhoneNumbers(locationId = this.config.locationId, limit = 50, skip = 0): Promise<GHLApiResponse<any>> {
     if (!locationId) throw new Error('locationId is required to list phone numbers');
     if (!Number.isInteger(limit) || limit < 1 || limit > 1000 ||
-        !Number.isInteger(skip) || skip < 0) {
-      throw new Error('Phone number limit must be an integer from 1 to 1000; skip must be a non-negative integer');
+        !Number.isInteger(skip) || skip < 0 || skip + limit > 1000) {
+      throw new Error('Phone number limit must be an integer from 1 to 1000; skip must be a non-negative integer, and skip + limit at most 1000');
     }
-    const pageSize = limit;
-    let page = Math.floor(skip / pageSize);
-    const offset = skip % pageSize;
-    const numbers: any[] = [];
-    let payload: any;
-    do {
-      const query = new URLSearchParams({ pageSize: String(pageSize), page: String(page) });
-      let response;
-      try {
-        response = await this.axiosInstance.get(
-          `/phone-system/numbers/location/${encodeURIComponent(locationId)}?${query}`,
-          { headers: { Version: 'v3' } }
-        );
-      } catch (error: any) {
-        // A sub-account with no phone system answers 404 RESOURCE_NOT_FOUND
-        // ("No Twilio account found for location ..."). That is an empty
-        // inventory, not a failed call. Any other 404 is still an error.
-        // The response interceptor rethrows as a plain Error carrying status/details.
-        const status = error?.status ?? error?.response?.status;
-        const body = (error?.details ?? error?.response?.data)?.error;
-        if (status === 404 && body?.code === 'RESOURCE_NOT_FOUND' &&
-            /no twilio account/i.test(String(body?.message))) {
-          return this.wrapResponse({
-            status: 'success',
-            message: 'No phone system is set up for this sub-account',
-            data: { numbers: [], total: 0, limit, skip, phoneSystemConfigured: false },
-          });
-        }
-        throw error;
+    // One request for the first skip + limit numbers, sliced here. GoHighLevel
+    // echoes `page` but returned the same numbers on every page when checked
+    // live (2026-11-11), so paging by `page` would repeat rows instead of
+    // advancing. Slicing is correct whether or not the API honours pageSize.
+    const query = new URLSearchParams({ pageSize: String(skip + limit), page: '0' });
+    let response;
+    try {
+      response = await this.axiosInstance.get(
+        `/phone-system/numbers/location/${encodeURIComponent(locationId)}?${query}`,
+        { headers: { Version: 'v3' } }
+      );
+    } catch (error: any) {
+      // A sub-account with no phone system answers 404 RESOURCE_NOT_FOUND
+      // ("No Twilio account found for location ..."). That is an empty
+      // inventory, not a failed call. Any other 404 is still an error.
+      // The response interceptor rethrows as a plain Error carrying status/details.
+      const status = error?.status ?? error?.response?.status;
+      const body = (error?.details ?? error?.response?.data)?.error;
+      if (status === 404 && body?.code === 'RESOURCE_NOT_FOUND' &&
+          /no twilio account/i.test(String(body?.message))) {
+        return this.wrapResponse({
+          status: 'success',
+          message: 'No phone system is set up for this sub-account',
+          data: { numbers: [], total: 0, limit, skip, phoneSystemConfigured: false },
+        });
       }
-      payload = response.data;
-      const batch = payload?.data?.numbers;
-      if (!Array.isArray(batch)) throw new Error('Phone System returned an invalid v3 numbers response');
-      numbers.push(...batch);
-      if (batch.length < pageSize || numbers.length >= offset + limit) break;
-      page++;
-    } while (true);
+      throw error;
+    }
+    const payload = response.data;
+    const all = payload?.data?.numbers;
+    if (!Array.isArray(all)) throw new Error('Phone System returned an invalid v3 numbers response');
     return this.wrapResponse({
       ...payload,
-      data: { ...payload.data, numbers: numbers.slice(offset, offset + limit), limit, skip },
+      data: { ...payload.data, numbers: all.slice(skip, skip + limit), limit, skip },
     });
   }
 

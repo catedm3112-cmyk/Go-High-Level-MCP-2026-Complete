@@ -10,7 +10,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and [Sem
 
 ### Fixed
 - `EnhancedGHLClient.makeRequest` forwards per-request options to the base client, through retries, and keys its GET cache on the API version. It used to drop them, so a request that asked for `Version: v3` went out with the client's default version on the `src/main.ts` and `/execute` paths. The hosted `api/` entry point uses `GHLApiClient` directly and was not affected.
-- Phone inventory (`get_phone_numbers`, `list_active_numbers_by_location`, `ghl_list_phone_numbers`) goes through one client method, `getActivePhoneNumbers`, which calls the documented location endpoint with a request-scoped `v3` header and `pageSize`/`page`. `ghl_list_phone_numbers` now returns the v3 payload (`data.numbers`) instead of the legacy `phoneNumbers` list. A sub-account with no phone system (GoHighLevel answers 404 `RESOURCE_NOT_FOUND`, "No Twilio account found") returns an empty list with `phoneSystemConfigured: false` instead of an error.
+- Phone inventory (`get_phone_numbers`, `list_active_numbers_by_location`, `ghl_list_phone_numbers`) goes through one client method, `getActivePhoneNumbers`, which calls the documented location endpoint with a request-scoped `v3` header. `limit`/`skip` are applied here from a single request, because GoHighLevel's `page` parameter returned the same numbers on every page when checked live. `ghl_list_phone_numbers` now returns the v3 payload (`data.numbers`) instead of the legacy `phoneNumbers` list. A sub-account with no phone system (GoHighLevel answers 404 `RESOURCE_NOT_FOUND`, "No Twilio account found") returns an empty list with `phoneSystemConfigured: false` instead of an error.
 - Funnel and website inventory uses `/funnels/funnel/list` and translates `skip` to `offset`. `get_funnel_pages` uses `/funnels/page` with the required `funnelId`, `offset` and `limit`. `get_funnel` searches the location inventory, since the public API has no single-funnel route.
 - `get_users` sends only `locationId` (extra query parameters return 422) and applies role, type, ID, sort and pagination locally.
 - `get_snippets` reads saved responses from the location templates API.
@@ -20,7 +20,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and [Sem
 - `docs/CONNECTION-TROUBLESHOOTING.md`: bridge token versus GoHighLevel key, and how to tell a client authorization failure from a GoHighLevel API failure.
 
 ### Validation
-- TypeScript compilation and 210 tests, including `tests/enhanced-ghl-client.test.ts` for the version-forwarding regression. Tests do not establish production behaviour; see the deployment validation steps in the PR description.
+- TypeScript compilation and 216 tests, including `tests/enhanced-ghl-client.test.ts` for the version-forwarding regression. Tests do not establish production behaviour; see the deployment validation steps in the PR description.
 
 ---
 

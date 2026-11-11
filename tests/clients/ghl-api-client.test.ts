@@ -81,19 +81,18 @@ describe('GHLApiClient', () => {
       expect(mockAxiosInstance.defaults.headers.Authorization).toBe('Bearer test_api_key_123');
     });
 
-    it('returns the exact skip/limit window across two API pages', async () => {
-      mockAxiosInstance.get
-        .mockResolvedValueOnce({ data: { status: 'success', data: { numbers: ['a', 'b'], total: 5 } } })
-        .mockResolvedValueOnce({ data: { status: 'success', data: { numbers: ['c', 'd'], total: 5 } } });
+    it('returns the exact skip/limit window from one request, whether or not the API honours pageSize', async () => {
+      mockAxiosInstance.get.mockResolvedValue({ data: { status: 'success', data: { numbers: ['a', 'b', 'c', 'd', 'e'] } } });
       const result: any = await ghlClient.getActivePhoneNumbers('otherLocation', 2, 1);
       expect(result.data.data.numbers).toEqual(['b', 'c']);
       expect(mockAxiosInstance.get.mock.calls.map((call: any[]) => call[0])).toEqual([
-        '/phone-system/numbers/location/otherLocation?pageSize=2&page=0',
-        '/phone-system/numbers/location/otherLocation?pageSize=2&page=1',
+        '/phone-system/numbers/location/otherLocation?pageSize=3&page=0',
       ]);
+      const past: any = await ghlClient.getActivePhoneNumbers('otherLocation', 5, 5);
+      expect(past.data.data.numbers).toEqual([]);
     });
 
-    it('stops on an empty page and rejects malformed payloads', async () => {
+    it('handles an empty inventory and rejects malformed payloads', async () => {
       mockAxiosInstance.get.mockResolvedValue({ data: { status: 'success', data: { numbers: [] } } });
       const result: any = await ghlClient.getActivePhoneNumbers();
       expect(result.data.data.numbers).toEqual([]);
@@ -123,6 +122,7 @@ describe('GHLApiClient', () => {
     it('rejects invalid pagination before sending a request', async () => {
       await expect(ghlClient.getActivePhoneNumbers('loc', 0, 0)).rejects.toThrow(/limit/);
       await expect(ghlClient.getActivePhoneNumbers('loc', 2, -1)).rejects.toThrow(/skip/);
+      await expect(ghlClient.getActivePhoneNumbers('loc', 600, 600)).rejects.toThrow(/at most 1000/);
       expect(mockAxiosInstance.get).not.toHaveBeenCalled();
     });
   });
