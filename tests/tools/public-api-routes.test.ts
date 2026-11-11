@@ -11,15 +11,23 @@ describe('public API routes', () => {
   let client: GHLApiClient;
   let requests: InternalAxiosRequestConfig[];
   let responseData: Record<string, any>;
+  let failWith: { status: number; data: any } | null;
 
   beforeEach(() => {
     requests = [];
+    failWith = null;
     responseData = { data: { numbers: [] }, funnels: [], workflows: [] };
     const create = axios.create.bind(axios);
     jest.spyOn(axios, 'create').mockImplementation(config => create({
       ...config,
       adapter: async request => {
         requests.push(request);
+        if (failWith) {
+          throw Object.assign(new Error(`Request failed with status code ${failWith.status}`), {
+            isAxiosError: true, config: request,
+            response: { data: failWith.data, status: failWith.status, statusText: '', headers: {}, config: request },
+          });
+        }
         return { data: responseData, status: 200,
           statusText: 'OK', headers: {}, config: request };
       },
@@ -41,6 +49,22 @@ describe('public API routes', () => {
       expect(requests[1].headers.get('Version')).toBe('2021-07-28');
     }
   );
+
+  it.each(['get_phone_numbers', 'list_active_numbers_by_location', 'ghl_list_phone_numbers'])(
+    '%s returns an empty inventory for a sub-account with no phone system', async name => {
+      failWith = { status: 404, data: { error: { code: 'RESOURCE_NOT_FOUND',
+        message: 'No Twilio account found for location locBound', message_code: 'NOT_FOUND' } } };
+      const tools = name === 'get_phone_numbers' ? new PhoneTools(client) : new PhoneSystemTools(client);
+      const out: any = await tools.handleToolCall(name, {});
+      expect(out.success).toBe(true);
+      expect(out.data.data).toMatchObject({ numbers: [], total: 0, phoneSystemConfigured: false });
+    });
+
+  it('surfaces the nested GoHighLevel reason on other phone-system errors', async () => {
+    failWith = { status: 404, data: { error: { code: 'RESOURCE_NOT_FOUND', message: 'Location not found' } } };
+    await expect(new PhoneTools(client).handleToolCall('get_phone_numbers', {}))
+      .rejects.toThrow('GHL API Error (404): Location not found');
+  });
 
   it('uses the requested location and encodes path segments for phone listing', async () => {
     await new PhoneTools(client).handleToolCall('get_phone_numbers', { locationId: 'loc/Other' });

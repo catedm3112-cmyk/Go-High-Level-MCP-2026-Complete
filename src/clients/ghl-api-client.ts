@@ -440,10 +440,14 @@ export class GHLApiClient {
    */
   private handleApiError(error: AxiosError<GHLErrorResponse>): Error {
     const status = error.response?.status || 500;
-    const message = error.response?.data?.message || error.message || 'Unknown error';
+    const data: any = error.response?.data;
+    // Some API families (phone system v3) nest the reason under `error`.
+    const message = data?.message || data?.error?.message || error.message || 'Unknown error';
     const errorMessage = Array.isArray(message) ? message.join(', ') : message;
-    
-    return new Error(`GHL API Error (${status}): ${errorMessage}`);
+
+    // Keep the status and response body on the error so callers can tell one
+    // 404 from another without parsing the message.
+    return Object.assign(new Error(`GHL API Error (${status}): ${errorMessage}`), { status, details: data });
   }
 
   /**
@@ -1575,10 +1579,29 @@ export class GHLApiClient {
     let payload: any;
     do {
       const query = new URLSearchParams({ pageSize: String(pageSize), page: String(page) });
-      const response = await this.axiosInstance.get(
-        `/phone-system/numbers/location/${encodeURIComponent(locationId)}?${query}`,
-        { headers: { Version: 'v3' } }
-      );
+      let response;
+      try {
+        response = await this.axiosInstance.get(
+          `/phone-system/numbers/location/${encodeURIComponent(locationId)}?${query}`,
+          { headers: { Version: 'v3' } }
+        );
+      } catch (error: any) {
+        // A sub-account with no phone system answers 404 RESOURCE_NOT_FOUND
+        // ("No Twilio account found for location ..."). That is an empty
+        // inventory, not a failed call. Any other 404 is still an error.
+        // The response interceptor rethrows as a plain Error carrying status/details.
+        const status = error?.status ?? error?.response?.status;
+        const body = (error?.details ?? error?.response?.data)?.error;
+        if (status === 404 && body?.code === 'RESOURCE_NOT_FOUND' &&
+            /no twilio account/i.test(String(body?.message))) {
+          return this.wrapResponse({
+            status: 'success',
+            message: 'No phone system is set up for this sub-account',
+            data: { numbers: [], total: 0, limit, skip, phoneSystemConfigured: false },
+          });
+        }
+        throw error;
+      }
       payload = response.data;
       const batch = payload?.data?.numbers;
       if (!Array.isArray(batch)) throw new Error('Phone System returned an invalid v3 numbers response');

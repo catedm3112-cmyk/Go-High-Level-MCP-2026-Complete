@@ -102,6 +102,24 @@ describe('GHLApiClient', () => {
       await expect(ghlClient.getActivePhoneNumbers()).rejects.toThrow(/invalid v3/);
     });
 
+    it('reports an empty inventory when the sub-account has no phone system', async () => {
+      mockAxiosInstance.get.mockRejectedValue({ response: { status: 404, data: { error: {
+        code: 'RESOURCE_NOT_FOUND', message: 'No Twilio account found for location loc', message_code: 'NOT_FOUND',
+      } } } });
+      const result: any = await ghlClient.getActivePhoneNumbers('loc');
+      expect(result.success).toBe(true);
+      expect(result.data.data).toMatchObject({ numbers: [], total: 0, phoneSystemConfigured: false });
+    });
+
+    it('still fails on any other 404 or error', async () => {
+      const other = { response: { status: 404, data: { message: 'Cannot GET /phone-system/numbers/location/loc' } } };
+      mockAxiosInstance.get.mockRejectedValue(other);
+      await expect(ghlClient.getActivePhoneNumbers('loc')).rejects.toBe(other);
+      const denied = { response: { status: 401, data: { error: { code: 'RESOURCE_NOT_FOUND', message: 'No Twilio account found' } } } };
+      mockAxiosInstance.get.mockRejectedValue(denied);
+      await expect(ghlClient.getActivePhoneNumbers('loc')).rejects.toBe(denied);
+    });
+
     it('rejects invalid pagination before sending a request', async () => {
       await expect(ghlClient.getActivePhoneNumbers('loc', 0, 0)).rejects.toThrow(/limit/);
       await expect(ghlClient.getActivePhoneNumbers('loc', 2, -1)).rejects.toThrow(/skip/);
