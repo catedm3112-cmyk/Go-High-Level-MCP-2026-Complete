@@ -66,6 +66,67 @@ describe('GHLApiClient', () => {
     jest.clearAllMocks();
   });
 
+  describe('active phone numbers v3 API', () => {
+    it('uses the bound location and a request-scoped v3 header', async () => {
+      mockAxiosInstance.get.mockResolvedValue({ data: {
+        status: 'success', data: { numbers: [{ phoneNumber: '+15555550100' }], total: 1 },
+      } });
+      const result: any = await ghlClient.getActivePhoneNumbers();
+      expect(mockAxiosInstance.get).toHaveBeenCalledWith(
+        '/phone-system/numbers/location/test_location_123?pageSize=50&page=0',
+        { headers: { Version: 'v3' } },
+      );
+      expect(result.data.data.numbers).toHaveLength(1);
+      expect(ghlClient.getConfig().version).toBe('2021-07-28');
+      expect(mockAxiosInstance.defaults.headers.Authorization).toBe('Bearer test_api_key_123');
+    });
+
+    it('returns the exact skip/limit window from one request, whether or not the API honours pageSize', async () => {
+      mockAxiosInstance.get.mockResolvedValue({ data: { status: 'success', data: { numbers: ['a', 'b', 'c', 'd', 'e'] } } });
+      const result: any = await ghlClient.getActivePhoneNumbers('otherLocation', 2, 1);
+      expect(result.data.data.numbers).toEqual(['b', 'c']);
+      expect(mockAxiosInstance.get.mock.calls.map((call: any[]) => call[0])).toEqual([
+        '/phone-system/numbers/location/otherLocation?pageSize=3&page=0',
+      ]);
+      const past: any = await ghlClient.getActivePhoneNumbers('otherLocation', 5, 5);
+      expect(past.data.data.numbers).toEqual([]);
+    });
+
+    it('handles an empty inventory and rejects malformed payloads', async () => {
+      mockAxiosInstance.get.mockResolvedValue({ data: { status: 'success', data: { numbers: [] } } });
+      const result: any = await ghlClient.getActivePhoneNumbers();
+      expect(result.data.data.numbers).toEqual([]);
+      expect(mockAxiosInstance.get).toHaveBeenCalledTimes(1);
+      mockAxiosInstance.get.mockResolvedValue({ data: { data: {} } });
+      await expect(ghlClient.getActivePhoneNumbers()).rejects.toThrow(/invalid v3/);
+    });
+
+    it('reports an empty inventory when the sub-account has no phone system', async () => {
+      mockAxiosInstance.get.mockRejectedValue({ response: { status: 404, data: { error: {
+        code: 'RESOURCE_NOT_FOUND', message: 'No Twilio account found for location loc', message_code: 'NOT_FOUND',
+      } } } });
+      const result: any = await ghlClient.getActivePhoneNumbers('loc');
+      expect(result.success).toBe(true);
+      expect(result.data.data).toMatchObject({ numbers: [], total: 0, phoneSystemConfigured: false });
+    });
+
+    it('still fails on any other 404 or error', async () => {
+      const other = { response: { status: 404, data: { message: 'Cannot GET /phone-system/numbers/location/loc' } } };
+      mockAxiosInstance.get.mockRejectedValue(other);
+      await expect(ghlClient.getActivePhoneNumbers('loc')).rejects.toBe(other);
+      const denied = { response: { status: 401, data: { error: { code: 'RESOURCE_NOT_FOUND', message: 'No Twilio account found' } } } };
+      mockAxiosInstance.get.mockRejectedValue(denied);
+      await expect(ghlClient.getActivePhoneNumbers('loc')).rejects.toBe(denied);
+    });
+
+    it('rejects invalid pagination before sending a request', async () => {
+      await expect(ghlClient.getActivePhoneNumbers('loc', 0, 0)).rejects.toThrow(/limit/);
+      await expect(ghlClient.getActivePhoneNumbers('loc', 2, -1)).rejects.toThrow(/skip/);
+      await expect(ghlClient.getActivePhoneNumbers('loc', 600, 600)).rejects.toThrow(/at most 1000/);
+      expect(mockAxiosInstance.get).not.toHaveBeenCalled();
+    });
+  });
+
   describe('constructor', () => {
     it('should initialize with provided configuration', () => {
       expect(mockAxios.create).toHaveBeenCalledWith({

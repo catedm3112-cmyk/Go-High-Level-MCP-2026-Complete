@@ -294,12 +294,15 @@ export class TemplatesTools {
       // Snippet/Canned Response Templates
       {
         name: 'get_snippets',
-        description: 'Get canned response snippets',
+        description: 'List saved SMS/email response templates through the location templates API. Requires locations/templates.readonly. Supports pagination.',
         inputSchema: {
           type: 'object',
           properties: {
             locationId: { type: 'string', description: 'Location ID' },
-            type: { type: 'string', enum: ['sms', 'email', 'all'], description: 'Snippet type' }
+            type: { type: 'string', enum: ['sms', 'email', 'all'], description: 'Snippet type' },
+            originId: { type: 'string', description: 'Optional template origin filter. Omit for an unfiltered list.' },
+            skip: { type: 'number', description: 'Number of templates to skip (default: 0)' },
+            limit: { type: 'number', description: 'Maximum templates to return (default: 25)' }
           }
         },
         _meta: {
@@ -467,10 +470,15 @@ export class TemplatesTools {
 
       // Snippets
       case 'get_snippets': {
-        const params = new URLSearchParams();
-        params.append('locationId', locationId);
-        if (args.type) params.append('type', String(args.type));
-        return this.ghlClient.makeRequest('GET', `/templates/snippets?${params.toString()}`);
+        // GHL exposes saved response snippets as location templates, not
+        // /templates/snippets. An empty originId requests the unfiltered list.
+        const result = await this.ghlClient.getLocationTemplates(locationId, {
+          originId: typeof args.originId === 'string' ? args.originId : '',
+          skip: Number(args.skip) || 0,
+          limit: Number(args.limit) || 25,
+          ...(args.type === 'sms' || args.type === 'email' ? { type: args.type } : {}),
+        });
+        return result.data ? { ...result, data: { ...result.data, snippets: result.data.templates } } : result;
       }
       case 'create_snippet': {
         return this.ghlClient.makeRequest('POST', `/templates/snippets`, {

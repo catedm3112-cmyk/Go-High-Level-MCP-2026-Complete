@@ -12,7 +12,7 @@ export class UsersTools {
     return [
       {
         name: 'get_users',
-        description: 'Get all users/team members for a location. Returns team members with their roles and permissions.',
+        description: 'Get users/team members for a location, including roles and permissions. Filtering, sorting, and pagination are applied locally because the location-users API accepts only locationId.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -26,7 +26,7 @@ export class UsersTools {
             },
             limit: {
               type: 'number',
-              description: 'Maximum number of users to return (default: 25, max: 100)'
+              description: 'Maximum number of users to return (max: 100). Omit to return all matching users.'
             },
             type: {
               type: 'string',
@@ -280,17 +280,26 @@ export class UsersTools {
 
     switch (toolName) {
       case 'get_users': {
-        const params = new URLSearchParams();
-        params.append('locationId', locationId);
-        if (args.skip) params.append('skip', String(args.skip));
-        if (args.limit) params.append('limit', String(args.limit));
-        if (args.type) params.append('type', String(args.type));
-        if (args.role) params.append('role', String(args.role));
-        if (args.ids) params.append('ids', String(args.ids));
-        if (args.sort) params.append('sort', String(args.sort));
-        if (args.sortDirection) params.append('sortDirection', String(args.sortDirection));
-        
-        return this.ghlClient.makeRequest('GET', `/users/?${params.toString()}`);
+        // GET /users/ rejects extra query parameters with 422. Keep the existing
+        // MCP filter arguments, but apply them to this subaccount's result.
+        const result = await this.ghlClient.makeRequest('GET', `/users/?${new URLSearchParams({ locationId })}`);
+        const data = result?.data;
+        if (!Array.isArray(data?.users)) return result;
+        const ids = args.ids ? new Set(String(args.ids).split(',').map(id => id.trim()).filter(Boolean)) : null;
+        const users = data.users.filter((user: any) =>
+          (!ids || ids.has(user.id)) &&
+          (!args.type || (user.roles?.type ?? user.type) === args.type) &&
+          (!args.role || (user.roles?.role ?? user.role) === args.role)
+        );
+        if (args.sort) {
+          const field = String(args.sort);
+          const direction = args.sortDirection === 'desc' ? -1 : 1;
+          users.sort((a: any, b: any) => direction * String(a[field] ?? '').localeCompare(String(b[field] ?? '')));
+        }
+        const skip = Math.max(0, Math.trunc(Number(args.skip) || 0));
+        const limit = Number(args.limit) > 0 ? Math.min(100, Math.trunc(Number(args.limit))) : users.length;
+        const page = users.slice(skip, skip + limit);
+        return { ...result, data: { ...data, users: page, total: users.length, returned: page.length } };
       }
 
       case 'get_user': {
