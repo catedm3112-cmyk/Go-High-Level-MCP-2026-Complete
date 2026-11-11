@@ -435,7 +435,7 @@ export class PhoneTools {
     switch (toolName) {
       // Phone Numbers
       case 'get_phone_numbers': {
-        return this.ghlClient.makeRequest('GET', `/phone-system/numbers/location/${encodeURIComponent(locationId)}`, undefined, { version: 'v3' });
+        return this.ghlClient.getActivePhoneNumbers(locationId);
       }
       case 'get_phone_number': {
         return this.ghlClient.makeRequest('GET', `/phone-numbers/${args.phoneNumberId}?locationId=${locationId}`);

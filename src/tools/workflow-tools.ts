@@ -86,7 +86,7 @@ export class WorkflowTools {
       },
       {
         name: 'ghl_update_workflow_status',
-        description: 'Enable or disable a workflow. Active workflows process contacts; inactive ones are paused.',
+        description: 'Changing workflow status is unavailable on the public API. Use the GoHighLevel UI (Automation → Workflows).',
         inputSchema: {
           type: 'object',
           properties: {
@@ -319,39 +319,26 @@ export class WorkflowTools {
   }
 
   private async updateWorkflowStatus(params: any): Promise<any> {
-    const body: Record<string, unknown> = { status: params.status };
-    const locationId = this.locationId(params);
-    if (locationId) body.locationId = locationId;
-    return (this.apiClient as any).makeRequest('PUT', `/workflows/${params.workflowId}`, body);
+    throw this.unsupportedWorkflowOperation('Changing workflow status');
   }
 
   private async deleteWorkflow(params: any): Promise<any> {
-    const locationId = this.locationId(params);
-    const qs = locationId ? `?locationId=${encodeURIComponent(locationId)}` : '';
-    return (this.apiClient as any).makeRequest('DELETE', `/workflows/${params.workflowId}${qs}`);
+    throw this.unsupportedWorkflowOperation('Deleting workflows');
   }
 
   private async triggerWorkflow(params: any): Promise<any> {
-    const locationId = this.locationId(params);
-    const body: Record<string, unknown> = {
-      contactId: params.contactId,
-      ...(locationId && { locationId }),
-    };
-    return (this.apiClient as any).makeRequest('POST', `/workflows/${params.workflowId}/trigger`, body);
+    // Public API enrollment is a contact operation, not /workflows/{id}/trigger.
+    return this.apiClient.addContactToWorkflow(params.contactId, params.workflowId);
   }
 
   private async getWorkflowExecutions(params: any): Promise<any> {
-    const locationId = this.locationId(params);
-    const qp = new URLSearchParams();
-    if (locationId) qp.append('locationId', locationId);
-    if (params.contactId) qp.append('contactId', params.contactId);
-    if (params.status) qp.append('status', params.status);
-    if (params.startDate) qp.append('startDate', params.startDate);
-    if (params.endDate) qp.append('endDate', params.endDate);
-    if (params.limit) qp.append('limit', String(params.limit));
-    if (params.skip) qp.append('skip', String(params.skip));
-    const qs = qp.toString();
-    return (this.apiClient as any).makeRequest('GET', `/workflows/${params.workflowId}/executions${qs ? `?${qs}` : ''}`);
+    throw this.unsupportedWorkflowOperation('Reading workflow execution history');
+  }
+
+  private unsupportedWorkflowOperation(operation: string): Error {
+    return new Error(`${operation} is not available through GoHighLevel's public API with Private Integration keys. ` +
+      'Use ghl_list_workflows for inventory, add_contact_to_workflow for enrollment, or the GoHighLevel UI ' +
+      '(Automation → Workflows) for steps, status and execution history. Nothing was sent to GoHighLevel.');
   }
 }
 

@@ -14,7 +14,7 @@ describe('public API routes', () => {
 
   beforeEach(() => {
     requests = [];
-    responseData = { numbers: [], funnels: [], workflows: [] };
+    responseData = { data: { numbers: [] }, funnels: [], workflows: [] };
     const create = axios.create.bind(axios);
     jest.spyOn(axios, 'create').mockImplementation(config => create({
       ...config,
@@ -30,12 +30,12 @@ describe('public API routes', () => {
 
   afterEach(() => jest.restoreAllMocks());
 
-  it.each(['get_phone_numbers', 'list_active_numbers_by_location'])(
+  it.each(['get_phone_numbers', 'list_active_numbers_by_location', 'ghl_list_phone_numbers'])(
     '%s uses the supported route and v3 without changing other CRM requests', async name => {
       const tools = name === 'get_phone_numbers' ? new PhoneTools(client) : new PhoneSystemTools(client);
       await tools.handleToolCall(name, {});
       await client.makeRequest('GET', '/contacts/');
-      expect(requests[0].url).toBe('/phone-system/numbers/location/locBound');
+      expect(requests[0].url).toBe('/phone-system/numbers/location/locBound?pageSize=50&page=0');
       expect(requests[0].headers.get('Version')).toBe('v3');
       expect(requests[0].headers.get('Authorization')).toBe('Bearer pit-test');
       expect(requests[1].headers.get('Version')).toBe('2021-07-28');
@@ -44,7 +44,7 @@ describe('public API routes', () => {
 
   it('uses the requested location and encodes path segments for phone listing', async () => {
     await new PhoneTools(client).handleToolCall('get_phone_numbers', { locationId: 'loc/Other' });
-    expect(requests[0].url).toBe('/phone-system/numbers/location/loc%2FOther');
+    expect(requests[0].url).toBe('/phone-system/numbers/location/loc%2FOther?pageSize=50&page=0');
   });
 
   it('lists funnels using the documented route, offset, and filters', async () => {
